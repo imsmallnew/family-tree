@@ -45,9 +45,9 @@ type FontScaleType = 'normal' | 'large' | 'xlarge';
 type LineageBranchView = 'both' | 'paternal' | 'maternal';
 type AddRelationType = 'sibling' | 'spouse' | 'child';
 
-const LOCAL_MEMBERS_KEY = 'family_tree_members_v5';
-const LOCAL_RELS_KEY = 'family_tree_rels_v5';
-const LOCAL_SETTINGS_KEY = 'family_tree_settings_v4';
+const LOCAL_MEMBERS_KEY = 'family_tree_members_v6';
+const LOCAL_RELS_KEY = 'family_tree_rels_v6';
+const LOCAL_SETTINGS_KEY = 'family_tree_settings_v5';
 const LOCAL_FONT_SCALE_KEY = 'family_tree_font_scale_v1';
 const LOCAL_REMEMBERED_PASSCODE_KEY = 'family_tree_remembered_passcode_v1';
 
@@ -639,19 +639,17 @@ export function App() {
         const cardRect = cardEl.getBoundingClientRect();
 
         const currentScrollLeft = viewport.scrollLeft;
+        const currentScrollTop = viewport.scrollTop;
         const cardCenterXInViewport =
           cardRect.left - viewportRect.left + currentScrollLeft + cardRect.width / 2;
+        const cardCenterYInViewport =
+          cardRect.top - viewportRect.top + currentScrollTop + cardRect.height / 2;
         const nextScrollLeft = Math.max(0, cardCenterXInViewport - viewport.clientWidth / 2);
+        const nextScrollTop = Math.max(0, cardCenterYInViewport - viewport.clientHeight / 2);
 
         viewport.scrollTo({
           left: nextScrollLeft,
-          behavior: 'smooth'
-        });
-
-        const cardCenterYInWindow =
-          cardRect.top + window.scrollY - window.innerHeight / 2 + cardRect.height / 2;
-        window.scrollTo({
-          top: Math.max(0, cardCenterYInWindow),
+          top: nextScrollTop,
           behavior: 'smooth'
         });
       }, 60);
@@ -677,7 +675,7 @@ export function App() {
       x: e.clientX,
       y: e.clientY,
       scrollLeft: viewport.scrollLeft,
-      scrollTop: window.scrollY
+      scrollTop: viewport.scrollTop
     };
   };
 
@@ -692,7 +690,7 @@ export function App() {
 
     if (dragDistanceRef.current > 4) {
       viewport.scrollLeft = dragStartRef.current.scrollLeft - dx;
-      window.scrollTo({ top: dragStartRef.current.scrollTop - dy });
+      viewport.scrollTop = dragStartRef.current.scrollTop - dy;
     }
   };
 
@@ -1588,75 +1586,68 @@ export function App() {
     .sort((a, b) => (members[a]?.birthOrder || 0) - (members[b]?.birthOrder || 0));
 
   return (
-    <div className="min-h-screen flex flex-col bg-stone-100 text-stone-900">
-      {/* Compact 2-Row Top Navigation & Elder-Friendly Control Bar */}
-      <header className="bg-white border-b-2 border-stone-200 px-4 sm:px-6 py-2.5 sticky top-0 z-30 shadow-xs">
+    <div className="h-screen flex flex-col bg-stone-100 text-stone-900 overflow-hidden">
+      {/* Compact 2-Row Top Navigation & Elder-Friendly Control Bar (佔比約 1/5) */}
+      <header className="bg-white border-b-2 border-stone-200 px-3 sm:px-6 py-2 shrink-0 z-30 shadow-xs">
         {/* ROW 1: Left Title & Right Font Size + Welcome + Logout (Parallel with Title) */}
-        <div className="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-3">
+        <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-2">
           {/* Left: Editable Title & Logo */}
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-extrabold text-xl shadow-xs shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-extrabold text-base sm:text-xl shadow-xs shrink-0">
               {settings.logoText}
             </div>
 
             {!isEditingHeader ? (
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="font-extrabold text-xl sm:text-2xl text-stone-900 tracking-tight leading-tight">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 truncate">
+                  <h1 className="font-extrabold text-base sm:text-xl text-stone-900 tracking-tight leading-tight truncate">
                     {settings.title}
                   </h1>
                   {canEdit && (
                     <button
                       type="button"
                       onClick={handleOpenHeaderEdit}
-                      className="text-xs px-2.5 py-0.5 rounded-lg bg-stone-100 hover:bg-emerald-50 text-stone-700 hover:text-emerald-700 border border-stone-300 font-semibold transition flex items-center gap-1 cursor-pointer"
+                      className="text-[11px] sm:text-xs px-2 py-0.5 rounded-lg bg-stone-100 hover:bg-emerald-50 text-stone-700 hover:text-emerald-700 border border-stone-300 font-semibold transition shrink-0 cursor-pointer"
                     >
-                      ✏️ 修改標題
+                      ✏️ 改標題
                     </button>
                   )}
                 </div>
-                <p className="text-xs text-stone-500 font-medium leading-tight mt-0.5">
+                <p className="text-[11px] text-stone-500 font-medium leading-tight mt-0.5 truncate hidden sm:block">
                   {settings.subtitle}
                 </p>
               </div>
             ) : (
               <form
                 onSubmit={handleSaveHeader}
-                className="flex flex-wrap items-center gap-2 bg-stone-50 p-2 rounded-xl border-2 border-emerald-500"
+                className="flex flex-wrap items-center gap-1.5 bg-stone-50 p-1.5 rounded-xl border-2 border-emerald-500"
               >
                 <input
                   type="text"
                   maxLength={2}
                   value={headerDraft.logoText}
                   onChange={(e) => setHeaderDraft({ ...headerDraft, logoText: e.target.value })}
-                  placeholder="圖示字"
-                  className="w-14 px-2 py-1 text-sm font-bold rounded-lg bg-white border border-stone-300 text-center"
+                  placeholder="圖示"
+                  className="w-10 px-1 py-0.5 text-xs font-bold rounded-lg bg-white border border-stone-300 text-center"
                 />
                 <input
                   type="text"
                   value={headerDraft.title}
                   onChange={(e) => setHeaderDraft({ ...headerDraft, title: e.target.value })}
-                  placeholder="輸入家族族譜標題"
-                  className="w-52 px-2.5 py-1 text-sm font-bold rounded-lg bg-white border border-stone-300"
+                  placeholder="輸入族譜標題"
+                  className="w-36 sm:w-48 px-2 py-0.5 text-xs font-bold rounded-lg bg-white border border-stone-300"
                   required
-                />
-                <input
-                  type="text"
-                  value={headerDraft.subtitle}
-                  onChange={(e) => setHeaderDraft({ ...headerDraft, subtitle: e.target.value })}
-                  placeholder="輸入副標題說明"
-                  className="w-64 px-2.5 py-1 text-xs rounded-lg bg-white border border-stone-300"
                 />
                 <button
                   type="submit"
-                  className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+                  className="px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
                 >
                   儲存
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsEditingHeader(false)}
-                  className="px-2.5 py-1 rounded-lg bg-stone-200 hover:bg-stone-300 text-stone-700 text-xs font-semibold cursor-pointer"
+                  className="px-2 py-0.5 rounded-lg bg-stone-200 hover:bg-stone-300 text-stone-700 text-xs font-semibold cursor-pointer"
                 >
                   取消
                 </button>
@@ -1664,23 +1655,23 @@ export function App() {
             )}
           </div>
 
-          {/* Right (Row 1): Smaller Font Size Switcher -> Welcome Name -> System Settings (Admin) -> Logout */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* Smaller Font Size Switcher: 🔍 字體：標準 大字 特大(長輩) */}
-            <div className="flex items-center bg-stone-100 border border-stone-300 rounded-lg p-0.5 text-[12px]">
-              <span className="text-[12px] text-stone-600 font-bold px-2">🔍 字體：</span>
+          {/* Right (Row 1): Font Size -> Welcome Name -> System Settings (Admin) -> Logout */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Font Size Switcher */}
+            <div className="flex items-center bg-stone-100 border border-stone-300 rounded-lg p-0.5 text-[11px] sm:text-[12px]">
+              <span className="text-stone-600 font-bold px-1 hidden md:inline">🔍 字體：</span>
               {(
                 [
                   { id: 'normal', label: '標準' },
                   { id: 'large', label: '大字' },
-                  { id: 'xlarge', label: '特大(長輩)' }
+                  { id: 'xlarge', label: '特大' }
                 ] as const
               ).map((item) => (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => setFontScale(item.id)}
-                  className={`px-2 py-0.5 rounded-md text-[12px] font-bold transition cursor-pointer ${
+                  className={`px-1.5 sm:px-2 py-0.5 rounded-md text-[11px] sm:text-[12px] font-bold transition cursor-pointer ${
                     fontScale === item.id
                       ? 'bg-emerald-600 text-white shadow-2xs'
                       : 'text-stone-700 hover:bg-stone-200'
@@ -1691,9 +1682,9 @@ export function App() {
               ))}
             </div>
 
-            {/* Greeting for Gmail-authenticated family member (hidden for visitors) */}
+            {/* Greeting for Gmail-authenticated family member (hidden on small mobile) */}
             {welcomeDisplayName && (
-              <span className="text-sm font-extrabold text-emerald-800 px-1">
+              <span className="text-xs sm:text-sm font-extrabold text-emerald-800 px-1 truncate max-w-[100px] sm:max-w-none hidden md:inline">
                 歡迎 {welcomeDisplayName},
               </span>
             )}
@@ -1706,9 +1697,10 @@ export function App() {
                   setSystemSettingsTab('security');
                   setIsSecurityModalOpen(true);
                 }}
-                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-900 border border-indigo-300 hover:bg-indigo-100 transition cursor-pointer flex items-center gap-1"
+                className="px-2 py-1 rounded-lg text-[11px] sm:text-xs font-bold bg-indigo-50 text-indigo-900 border border-indigo-300 hover:bg-indigo-100 transition cursor-pointer flex items-center gap-1"
+                title="系統設定"
               >
-                <span>⚙️ 系統設定</span>
+                <span>⚙️<span className="hidden sm:inline"> 設定</span></span>
               </button>
             )}
 
@@ -1716,7 +1708,7 @@ export function App() {
             <button
               type="button"
               onClick={handleLogoutAndLock}
-              className="px-3 py-1 rounded-lg text-xs font-bold bg-stone-100 hover:bg-red-50 text-stone-700 hover:text-red-700 border border-stone-300 transition cursor-pointer"
+              className="px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-bold bg-stone-100 hover:bg-red-50 text-stone-700 hover:text-red-700 border border-stone-300 transition cursor-pointer"
               title="登出並回到首頁"
             >
               登出
@@ -1724,12 +1716,12 @@ export function App() {
           </div>
         </div>
 
-        {/* ROW 2: 👀 稱謂視角 + 🎯 置中 | ✏️ 編輯「...」個人資料 (+ 新增親屬下拉) | 🌳 族譜樹狀圖 | 🧭 親屬稱謂對照表 */}
-        <div className="max-w-[1600px] mx-auto mt-2 pt-2 border-t border-stone-200 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
+        {/* ROW 2: Mobile scrollable horizontal bar for clean 1-line display */}
+        <div className="max-w-[1600px] mx-auto mt-1.5 pt-1.5 border-t border-stone-200 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* 1. Perspective Selector & Center Button */}
-            <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-300 rounded-xl px-2.5 py-1">
-              <span className="text-xs text-emerald-900 font-bold shrink-0">👀 稱謂視角：</span>
+            <div className="flex items-center gap-1 bg-emerald-50 border border-emerald-300 rounded-lg px-2 py-1 shrink-0">
+              <span className="text-[11px] sm:text-xs text-emerald-900 font-bold shrink-0">👀 視角:</span>
               <select
                 value={perspectiveId}
                 onChange={(e) => {
@@ -1740,7 +1732,7 @@ export function App() {
                     centerMemberInTree(nextId);
                   }
                 }}
-                className="bg-transparent text-sm font-extrabold text-emerald-800 focus:outline-none cursor-pointer"
+                className="bg-transparent text-xs sm:text-sm font-extrabold text-emerald-800 focus:outline-none cursor-pointer max-w-[90px] sm:max-w-none truncate"
               >
                 <option value="visitor">訪客</option>
                 {Object.values(members).map((m) => (
@@ -1754,33 +1746,32 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => centerMemberInTree(perspectiveId)}
-                  className="text-xs px-2 py-0.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold transition cursor-pointer shrink-0"
+                  className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white font-bold transition cursor-pointer shrink-0"
                 >
-                  🎯 置中
+                  🎯
                 </button>
               )}
             </div>
 
-            {/* 2. Edit Selected Member + Compact Quick Add Relatives Popover */}
+            {/* 2. Edit Selected Member + Quick Add Dropdown */}
             {canEdit && (
-              <div className="flex items-center gap-1.5 relative">
+              <div className="flex items-center gap-1 shrink-0 relative">
                 <button
                   type="button"
                   onClick={() => setIsEditorDrawerOpen(true)}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-extrabold shadow-2xs transition cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-xs sm:text-sm font-extrabold shadow-2xs transition cursor-pointer shrink-0"
                 >
-                  ✏️ 編輯「{selectedMember.name}」個人資料
+                  ✏️ 編輯
                 </button>
 
-                {/* Compact Popover Trigger for Adding Sibling / Spouse / Child without taking a 3rd row */}
-                <div className="relative">
+                <div className="relative shrink-0">
                   <button
                     type="button"
                     onClick={() => setIsQuickAddMenuOpen((prev) => !prev)}
-                    className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-extrabold transition cursor-pointer flex items-center gap-1"
+                    className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-extrabold transition cursor-pointer flex items-center gap-1"
                   >
-                    <span>➕ 新增「{selectedMember.name}」親屬</span>
-                    <span className="text-[10px]">{isQuickAddMenuOpen ? '▲' : '▼'}</span>
+                    <span>➕ 親屬</span>
+                    <span className="text-[9px]">{isQuickAddMenuOpen ? '▲' : '▼'}</span>
                   </button>
 
                   {isQuickAddMenuOpen && (
@@ -1789,11 +1780,9 @@ export function App() {
                         className="fixed inset-0 z-40"
                         onClick={() => setIsQuickAddMenuOpen(false)}
                       />
-                      <div className="absolute left-0 mt-1.5 w-64 bg-white border-2 border-emerald-300 rounded-2xl shadow-xl p-2.5 z-50 space-y-1.5">
-                        <div className="text-xs font-extrabold text-emerald-950 px-2 py-1 border-b border-stone-100">
-                          ➕ 為「{selectedMember.name}
-                          {selectedMember.nickname ? ` (${selectedMember.nickname})` : ''}
-                          」操作：
+                      <div className="absolute left-0 mt-1 w-56 bg-white border-2 border-emerald-300 rounded-2xl shadow-xl p-2 z-50 space-y-1">
+                        <div className="text-[11px] font-extrabold text-emerald-950 px-2 py-1 border-b border-stone-100">
+                          ➕ 為「{selectedMember.name}」新增：
                         </div>
                         <button
                           type="button"
@@ -1801,7 +1790,7 @@ export function App() {
                             setIsQuickAddMenuOpen(false);
                             openAddMemberModal(selectedId, 'sibling');
                           }}
-                          className="w-full text-left px-3 py-2 rounded-xl bg-sky-50/70 hover:bg-sky-100 text-sky-900 border border-sky-200 text-xs font-extrabold transition cursor-pointer"
+                          className="w-full text-left px-2.5 py-1.5 rounded-lg bg-sky-50/70 hover:bg-sky-100 text-sky-900 border border-sky-200 text-xs font-bold transition cursor-pointer"
                         >
                           + 兄弟姐妹 (同輩)
                         </button>
@@ -1812,7 +1801,7 @@ export function App() {
                             setIsQuickAddMenuOpen(false);
                             openAddMemberModal(selectedId, 'spouse');
                           }}
-                          className="w-full text-left px-3 py-2 rounded-xl bg-pink-50/70 hover:bg-pink-100 text-pink-900 border border-pink-200 text-xs font-extrabold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="w-full text-left px-2.5 py-1.5 rounded-lg bg-pink-50/70 hover:bg-pink-100 text-pink-900 border border-pink-200 text-xs font-bold transition cursor-pointer disabled:opacity-40"
                         >
                           + 配偶 (伴侶)
                         </button>
@@ -1822,7 +1811,7 @@ export function App() {
                             setIsQuickAddMenuOpen(false);
                             openAddMemberModal(selectedId, 'child');
                           }}
-                          className="w-full text-left px-3 py-2 rounded-xl bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 text-xs font-extrabold transition cursor-pointer"
+                          className="w-full text-left px-2.5 py-1.5 rounded-lg bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 text-xs font-bold transition cursor-pointer"
                         >
                           + 子女 (下一代)
                         </button>
@@ -1833,103 +1822,89 @@ export function App() {
               </div>
             )}
 
-            {/* 3. Navigation Tabs: 🌳 族譜樹狀圖 & 🧭 親屬稱謂對照表 */}
+            {/* 3. Navigation Tabs */}
             <button
               type="button"
               onClick={() => setActiveTab('tree')}
-              className={`px-3.5 py-1.5 rounded-xl text-sm font-bold transition cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs sm:text-sm font-bold transition cursor-pointer shrink-0 ${
                 activeTab === 'tree'
                   ? 'bg-emerald-700 text-white shadow-xs'
                   : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-300'
               }`}
             >
-              🌳 族譜樹狀圖
+              🌳 樹狀圖
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('kinship')}
-              className={`px-3.5 py-1.5 rounded-xl text-sm font-bold transition cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs sm:text-sm font-bold transition cursor-pointer shrink-0 ${
                 activeTab === 'kinship'
                   ? 'bg-emerald-700 text-white shadow-xs'
                   : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-300'
               }`}
             >
-              🧭 親屬稱謂對照表
+              🧭 稱謂表
             </button>
-            {canEdit && showSchemaTab && (
-              <button
-                type="button"
-                onClick={() => setActiveTab('schema')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  activeTab === 'schema'
-                    ? 'bg-emerald-700 text-white shadow-xs'
-                    : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-300'
-                }`}
-              >
-                🗄️ 資料表預覽
-              </button>
-            )}
           </div>
 
-          {/* Right side of Row 2: Compact First-Generation Branch Switcher */}
+          {/* Right side: Generation Branch switcher */}
           {activeTab === 'tree' && (
-            <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl border border-stone-300 text-xs">
-              <span className="text-[11px] font-extrabold text-stone-600 px-1.5">第一代：</span>
+            <div className="flex items-center gap-1 bg-stone-100 p-0.5 rounded-lg border border-stone-300 text-[11px] shrink-0">
               <button
                 type="button"
                 onClick={() => setBranchView('both')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                className={`px-1.5 sm:px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
                   branchView === 'both'
                     ? 'bg-emerald-700 text-white shadow-2xs'
                     : 'text-stone-700 hover:bg-stone-200'
                 }`}
               >
-                雙家族總覽
+                總覽
               </button>
               <button
                 type="button"
                 onClick={() => setBranchView('paternal')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                className={`px-1.5 sm:px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
                   branchView === 'paternal'
                     ? 'bg-sky-700 text-white shadow-2xs'
                     : 'text-stone-700 hover:bg-stone-200'
                 }`}
               >
-                🟦 父系
+                父系
               </button>
               <button
                 type="button"
                 onClick={() => setBranchView('maternal')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                className={`px-1.5 sm:px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
                   branchView === 'maternal'
                     ? 'bg-amber-700 text-white shadow-2xs'
                     : 'text-stone-700 hover:bg-stone-200'
                 }`}
               >
-                🟧 母系
+                母系
               </button>
             </div>
           )}
         </div>
       </header>
 
-      {/* Floating Top-Center Toast Notification (置頂醒目 Toast 提示) */}
+      {/* Floating Top-Center Toast Notification */}
       {saveToast && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-6 py-3.5 rounded-2xl bg-emerald-700 text-white text-base font-extrabold shadow-2xl border-2 border-emerald-400 animate-bounce">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-700 text-white text-xs sm:text-sm font-extrabold shadow-2xl border-2 border-emerald-400">
           <span>{saveToast}</span>
           <button
             type="button"
             onClick={() => setSaveToast(null)}
-            className="text-emerald-200 hover:text-white font-bold text-sm px-1.5 cursor-pointer"
+            className="text-emerald-200 hover:text-white font-bold text-xs px-1 cursor-pointer"
           >
             ✕
           </button>
         </div>
       )}
 
-      {/* Main Content Layout (Larger Vertical Space for Tree Canvas) */}
-      <main className="max-w-[1600px] mx-auto w-full flex-1 p-3 sm:p-4 flex flex-col gap-3">
-        {/* TAB 1: Grab-to-Pan Family Tree Canvas */}
+      {/* Main Content Layout (佔比約 4/5，滿版彈性擴展) */}
+      <main className="max-w-[1600px] mx-auto w-full flex-1 p-2 sm:p-4 flex flex-col min-h-0 overflow-hidden">
+        {/* TAB 1: Grab-to-Pan Family Tree Canvas (自適應高寬滿版) */}
         {activeTab === 'tree' && (
           <div
             ref={treeViewportRef}
@@ -1937,7 +1912,7 @@ export function App() {
             onMouseMove={handleCanvasMouseMove}
             onMouseUp={handleCanvasMouseUpOrLeave}
             onMouseLeave={handleCanvasMouseUpOrLeave}
-            className={`bg-white border-2 border-stone-200 rounded-2xl p-4 sm:p-6 overflow-x-auto shadow-xs select-none flex-1 ${
+            className={`bg-white border-2 border-stone-200 rounded-2xl p-2 sm:p-6 overflow-auto shadow-xs select-none flex-1 h-full w-full ${
               isDraggingCanvas ? 'cursor-grabbing' : 'cursor-grab'
             }`}
           >
