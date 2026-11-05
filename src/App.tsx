@@ -217,8 +217,9 @@ export function App() {
   const dragDistanceRef = useRef(0);
   const [focusedPulseId, setFocusedPulseId] = useState<MemberId | null>(null);
 
-  // 7. State: Add Member Modal
+  // 7. State: Add Member Modal & Quick Add Dropdown
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isQuickAddMenuOpen, setIsQuickAddMenuOpen] = useState(false);
   const [addAnchorId, setAddAnchorId] = useState<MemberId>('me');
   const [addRelationType, setAddRelationType] = useState<AddRelationType>('sibling');
   const [newMemberDraft, setNewMemberDraft] = useState({
@@ -1381,7 +1382,7 @@ export function App() {
           e.stopPropagation();
           handleClickMemberCard(m.id);
         }}
-        className={`w-[235px] shrink-0 rounded-2xl p-3.5 cursor-pointer transition-all border-2 text-left relative shadow-xs hover:shadow-md ${
+        className={`w-[16.25rem] min-w-[258px] shrink-0 rounded-2xl p-3.5 cursor-pointer transition-all border-2 text-left relative shadow-xs hover:shadow-md ${
           isFocusedPulse
             ? 'ring-8 ring-amber-400/60 border-amber-500 bg-amber-50/40 scale-[1.03]'
             : isSelected
@@ -1419,7 +1420,7 @@ export function App() {
         <div className="flex items-center justify-between gap-1 mb-2">
           {!isVisitorPerspective && kin ? (
             <span
-              className={`text-xs px-2.5 py-0.5 rounded-full font-extrabold truncate ${
+              className={`text-xs px-2.5 py-0.5 rounded-full font-extrabold ${
                 isPerspective
                   ? 'bg-amber-100 text-amber-800 border border-amber-300'
                   : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
@@ -1460,11 +1461,11 @@ export function App() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1 flex-wrap">
-              <span className="font-extrabold text-base text-stone-900 truncate leading-snug">
+              <span className="font-extrabold text-base text-stone-900 leading-snug">
                 {m.name}
               </span>
               {m.nickname && (
-                <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold truncate">
+                <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
                   {m.nickname}
                 </span>
               )}
@@ -1474,11 +1475,11 @@ export function App() {
                 </span>
               )}
             </div>
-            <div className="text-xs text-stone-600 font-semibold truncate mt-0.5">
-              🎂 {m.birthday.slice(5)} · 農{lunarInfo?.monthDay || m.lunarBirthday}
+            <div className="text-xs text-stone-600 font-semibold mt-0.5 whitespace-nowrap">
+              🎂 {m.birthday}
             </div>
             {lunarInfo && (
-              <div className="text-[11px] text-emerald-800 font-bold truncate">
+              <div className="text-xs text-emerald-800 font-extrabold mt-0.5 whitespace-nowrap">
                 {lunarInfo.ganZhiYear} · 屬{lunarInfo.zodiac} · {lunarInfo.ageLabel}
               </div>
             )}
@@ -1486,12 +1487,12 @@ export function App() {
         </div>
 
         <div className="mt-2 pt-2 border-t border-stone-100 flex flex-col gap-0.5 text-xs">
-          <div className="font-bold text-stone-700 truncate flex items-center gap-1">
+          <div className="font-bold text-stone-700 flex items-center gap-1">
             <span>{m.workStatus === 'studying' ? '🎓' : '💼'}</span>
-            <span className="truncate">{workText}</span>
+            <span className="break-words">{workText}</span>
           </div>
           {!m.isAlive && m.passingDate && (
-            <div className="text-stone-500 font-medium truncate">
+            <div className="text-stone-500 font-medium">
               🕊️ 仙逝：{m.passingDate}
             </div>
           )}
@@ -1588,37 +1589,40 @@ export function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-stone-100 text-stone-900">
-      {/* Top Navigation & Elder-Friendly Control Bar */}
-      <header className="bg-white border-b-2 border-stone-200 px-6 py-4 sticky top-0 z-30 shadow-sm">
-        <div className="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-4">
+      {/* Compact 2-Row Top Navigation & Elder-Friendly Control Bar */}
+      <header className="bg-white border-b-2 border-stone-200 px-4 sm:px-6 py-2.5 sticky top-0 z-30 shadow-xs">
+        {/* ROW 1: Left Title & Right Font Size + Welcome + Logout (Parallel with Title) */}
+        <div className="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-3">
           {/* Left: Editable Title & Logo */}
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-700 text-white flex items-center justify-center font-extrabold text-2xl shadow-sm shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-extrabold text-xl shadow-xs shrink-0">
               {settings.logoText}
             </div>
 
             {!isEditingHeader ? (
               <div>
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <h1 className="font-extrabold text-2xl text-stone-900 tracking-tight">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="font-extrabold text-xl sm:text-2xl text-stone-900 tracking-tight leading-tight">
                     {settings.title}
                   </h1>
                   {canEdit && (
                     <button
                       type="button"
                       onClick={handleOpenHeaderEdit}
-                      className="text-sm px-3 py-1 rounded-lg bg-stone-100 hover:bg-emerald-50 text-stone-700 hover:text-emerald-700 border border-stone-300 font-semibold transition flex items-center gap-1 cursor-pointer"
+                      className="text-xs px-2.5 py-0.5 rounded-lg bg-stone-100 hover:bg-emerald-50 text-stone-700 hover:text-emerald-700 border border-stone-300 font-semibold transition flex items-center gap-1 cursor-pointer"
                     >
                       ✏️ 修改標題
                     </button>
                   )}
                 </div>
-                <p className="text-sm text-stone-600 font-medium mt-0.5">{settings.subtitle}</p>
+                <p className="text-xs text-stone-500 font-medium leading-tight mt-0.5">
+                  {settings.subtitle}
+                </p>
               </div>
             ) : (
               <form
                 onSubmit={handleSaveHeader}
-                className="flex flex-wrap items-center gap-2 bg-stone-50 p-2.5 rounded-xl border-2 border-emerald-500"
+                className="flex flex-wrap items-center gap-2 bg-stone-50 p-2 rounded-xl border-2 border-emerald-500"
               >
                 <input
                   type="text"
@@ -1626,14 +1630,14 @@ export function App() {
                   value={headerDraft.logoText}
                   onChange={(e) => setHeaderDraft({ ...headerDraft, logoText: e.target.value })}
                   placeholder="圖示字"
-                  className="w-16 px-2.5 py-1.5 text-base font-bold rounded-lg bg-white border border-stone-300 text-center"
+                  className="w-14 px-2 py-1 text-sm font-bold rounded-lg bg-white border border-stone-300 text-center"
                 />
                 <input
                   type="text"
                   value={headerDraft.title}
                   onChange={(e) => setHeaderDraft({ ...headerDraft, title: e.target.value })}
                   placeholder="輸入家族族譜標題"
-                  className="w-56 px-3 py-1.5 text-base font-bold rounded-lg bg-white border border-stone-300"
+                  className="w-52 px-2.5 py-1 text-sm font-bold rounded-lg bg-white border border-stone-300"
                   required
                 />
                 <input
@@ -1641,18 +1645,18 @@ export function App() {
                   value={headerDraft.subtitle}
                   onChange={(e) => setHeaderDraft({ ...headerDraft, subtitle: e.target.value })}
                   placeholder="輸入副標題說明"
-                  className="w-72 px-3 py-1.5 text-sm rounded-lg bg-white border border-stone-300"
+                  className="w-64 px-2.5 py-1 text-xs rounded-lg bg-white border border-stone-300"
                 />
                 <button
                   type="submit"
-                  className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold cursor-pointer"
+                  className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
                 >
                   儲存
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsEditingHeader(false)}
-                  className="px-3 py-1.5 rounded-lg bg-stone-200 hover:bg-stone-300 text-stone-700 text-sm font-semibold cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg bg-stone-200 hover:bg-stone-300 text-stone-700 text-xs font-semibold cursor-pointer"
                 >
                   取消
                 </button>
@@ -1660,18 +1664,11 @@ export function App() {
             )}
           </div>
 
-          {/* Right Controls: Greeting (if Gmail logged in), Font Size, Perspective, System Settings (Admin only), Logout */}
+          {/* Right (Row 1): Smaller Font Size Switcher -> Welcome Name -> System Settings (Admin) -> Logout */}
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* Greeting for Gmail-authenticated family member (hidden for visitors) */}
-            {welcomeDisplayName && (
-              <span className="text-base font-extrabold text-emerald-800 px-2">
-                歡迎 {welcomeDisplayName},
-              </span>
-            )}
-
-            {/* Font Size Switcher for Elders */}
-            <div className="flex items-center bg-stone-100 border border-stone-300 rounded-xl p-1">
-              <span className="text-sm text-stone-700 font-bold px-2">🔍 字體：</span>
+            {/* Smaller Font Size Switcher: 🔍 字體：標準 大字 特大(長輩) */}
+            <div className="flex items-center bg-stone-100 border border-stone-300 rounded-lg p-0.5 text-[12px]">
+              <span className="text-[12px] text-stone-600 font-bold px-2">🔍 字體：</span>
               {(
                 [
                   { id: 'normal', label: '標準' },
@@ -1683,9 +1680,9 @@ export function App() {
                   key={item.id}
                   type="button"
                   onClick={() => setFontScale(item.id)}
-                  className={`px-2.5 py-1 rounded-lg text-sm font-bold transition cursor-pointer ${
+                  className={`px-2 py-0.5 rounded-md text-[12px] font-bold transition cursor-pointer ${
                     fontScale === item.id
-                      ? 'bg-emerald-600 text-white shadow-xs'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
                       : 'text-stone-700 hover:bg-stone-200'
                   }`}
                 >
@@ -1694,9 +1691,45 @@ export function App() {
               ))}
             </div>
 
-            {/* Perspective Selector (No Daniel-centric role labels; visitor has no kinship suffix) */}
-            <div className="flex items-center gap-2 bg-emerald-50 border-2 border-emerald-300 rounded-xl px-3 py-1.5">
-              <span className="text-sm text-emerald-900 font-bold">👀 稱謂視角：</span>
+            {/* Greeting for Gmail-authenticated family member (hidden for visitors) */}
+            {welcomeDisplayName && (
+              <span className="text-sm font-extrabold text-emerald-800 px-1">
+                歡迎 {welcomeDisplayName},
+              </span>
+            )}
+
+            {/* System Settings Button (Only visible for Admin / Editor) */}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSystemSettingsTab('security');
+                  setIsSecurityModalOpen(true);
+                }}
+                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-900 border border-indigo-300 hover:bg-indigo-100 transition cursor-pointer flex items-center gap-1"
+              >
+                <span>⚙️ 系統設定</span>
+              </button>
+            )}
+
+            {/* Logout Button */}
+            <button
+              type="button"
+              onClick={handleLogoutAndLock}
+              className="px-3 py-1 rounded-lg text-xs font-bold bg-stone-100 hover:bg-red-50 text-stone-700 hover:text-red-700 border border-stone-300 transition cursor-pointer"
+              title="登出並回到首頁"
+            >
+              登出
+            </button>
+          </div>
+        </div>
+
+        {/* ROW 2: 👀 稱謂視角 + 🎯 置中 | ✏️ 編輯「...」個人資料 (+ 新增親屬下拉) | 🌳 族譜樹狀圖 | 🧭 親屬稱謂對照表 */}
+        <div className="max-w-[1600px] mx-auto mt-2 pt-2 border-t border-stone-200 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 1. Perspective Selector & Center Button */}
+            <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-300 rounded-xl px-2.5 py-1">
+              <span className="text-xs text-emerald-900 font-bold shrink-0">👀 稱謂視角：</span>
               <select
                 value={perspectiveId}
                 onChange={(e) => {
@@ -1707,7 +1740,7 @@ export function App() {
                     centerMemberInTree(nextId);
                   }
                 }}
-                className="bg-transparent text-base font-extrabold text-emerald-800 focus:outline-none cursor-pointer"
+                className="bg-transparent text-sm font-extrabold text-emerald-800 focus:outline-none cursor-pointer"
               >
                 <option value="visitor">訪客</option>
                 {Object.values(members).map((m) => (
@@ -1721,117 +1754,159 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => centerMemberInTree(perspectiveId)}
-                  className="text-xs px-2 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold transition cursor-pointer"
+                  className="text-xs px-2 py-0.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold transition cursor-pointer shrink-0"
                 >
                   🎯 置中
                 </button>
               )}
             </div>
 
-            {/* System Settings Button (Only visible for Admin / Editor; hidden in visitor read-only mode) */}
+            {/* 2. Edit Selected Member + Compact Quick Add Relatives Popover */}
             {canEdit && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSystemSettingsTab('security');
-                  setIsSecurityModalOpen(true);
-                }}
-                className="px-3.5 py-2 rounded-xl text-sm font-bold bg-indigo-50 text-indigo-900 border border-indigo-300 hover:bg-indigo-100 transition cursor-pointer flex items-center gap-1"
-              >
-                <span>⚙️ 系統設定</span>
-              </button>
+              <div className="flex items-center gap-1.5 relative">
+                <button
+                  type="button"
+                  onClick={() => setIsEditorDrawerOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-extrabold shadow-2xs transition cursor-pointer"
+                >
+                  ✏️ 編輯「{selectedMember.name}」個人資料
+                </button>
+
+                {/* Compact Popover Trigger for Adding Sibling / Spouse / Child without taking a 3rd row */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsQuickAddMenuOpen((prev) => !prev)}
+                    className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-extrabold transition cursor-pointer flex items-center gap-1"
+                  >
+                    <span>➕ 新增「{selectedMember.name}」親屬</span>
+                    <span className="text-[10px]">{isQuickAddMenuOpen ? '▲' : '▼'}</span>
+                  </button>
+
+                  {isQuickAddMenuOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsQuickAddMenuOpen(false)}
+                      />
+                      <div className="absolute left-0 mt-1.5 w-64 bg-white border-2 border-emerald-300 rounded-2xl shadow-xl p-2.5 z-50 space-y-1.5">
+                        <div className="text-xs font-extrabold text-emerald-950 px-2 py-1 border-b border-stone-100">
+                          ➕ 為「{selectedMember.name}
+                          {selectedMember.nickname ? ` (${selectedMember.nickname})` : ''}
+                          」操作：
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsQuickAddMenuOpen(false);
+                            openAddMemberModal(selectedId, 'sibling');
+                          }}
+                          className="w-full text-left px-3 py-2 rounded-xl bg-sky-50/70 hover:bg-sky-100 text-sky-900 border border-sky-200 text-xs font-extrabold transition cursor-pointer"
+                        >
+                          + 兄弟姐妹 (同輩)
+                        </button>
+                        <button
+                          type="button"
+                          disabled={Boolean(getSpouseOf(selectedId, relationships))}
+                          onClick={() => {
+                            setIsQuickAddMenuOpen(false);
+                            openAddMemberModal(selectedId, 'spouse');
+                          }}
+                          className="w-full text-left px-3 py-2 rounded-xl bg-pink-50/70 hover:bg-pink-100 text-pink-900 border border-pink-200 text-xs font-extrabold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          + 配偶 (伴侶)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsQuickAddMenuOpen(false);
+                            openAddMemberModal(selectedId, 'child');
+                          }}
+                          className="w-full text-left px-3 py-2 rounded-xl bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 text-xs font-extrabold transition cursor-pointer"
+                        >
+                          + 子女 (下一代)
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
             )}
 
-            {/* Logout Button */}
-            <button
-              type="button"
-              onClick={handleLogoutAndLock}
-              className="px-3.5 py-2 rounded-xl text-sm font-bold bg-stone-100 hover:bg-red-50 text-stone-700 hover:text-red-700 border border-stone-300 transition cursor-pointer"
-              title="登出並回到首頁"
-            >
-              登出
-            </button>
-          </div>
-        </div>
-
-        {/* Navigation Tabs + Quick Add Member & Edit Buttons (Admin Only) */}
-        <div className="max-w-[1600px] mx-auto mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-stone-200 pt-3">
-          <div className="flex flex-wrap gap-3">
+            {/* 3. Navigation Tabs: 🌳 族譜樹狀圖 & 🧭 親屬稱謂對照表 */}
             <button
               type="button"
               onClick={() => setActiveTab('tree')}
-              className={`px-5 py-2 rounded-xl text-base font-bold transition cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-xl text-sm font-bold transition cursor-pointer ${
                 activeTab === 'tree'
                   ? 'bg-emerald-700 text-white shadow-xs'
                   : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-300'
               }`}
             >
-              🌳 族譜樹狀圖 & 動態稱謂
+              🌳 族譜樹狀圖
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('kinship')}
-              className={`px-5 py-2 rounded-xl text-base font-bold transition cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-xl text-sm font-bold transition cursor-pointer ${
                 activeTab === 'kinship'
                   ? 'bg-emerald-700 text-white shadow-xs'
                   : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-300'
               }`}
             >
-              🧭 親屬稱謂對照表（共 {Object.keys(members).length} 人）
+              🧭 親屬稱謂對照表
             </button>
             {canEdit && showSchemaTab && (
               <button
                 type="button"
                 onClick={() => setActiveTab('schema')}
-                className={`px-5 py-2 rounded-xl text-base font-bold transition cursor-pointer ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                   activeTab === 'schema'
                     ? 'bg-emerald-700 text-white shadow-xs'
                     : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-300'
                 }`}
               >
-                🗄️ Firestore 資料表預覽
+                🗄️ 資料表預覽
               </button>
             )}
           </div>
 
-          {canEdit && (
-            <div className="flex flex-wrap items-center gap-2 bg-emerald-50/90 border border-emerald-300 px-3.5 py-1.5 rounded-xl">
-              <span className="text-sm font-extrabold text-emerald-950">
-                ➕ 為「
-                <span className="text-emerald-700">
-                  {selectedMember.name}
-                  {selectedMember.nickname ? ` (${selectedMember.nickname})` : ''}
-                </span>
-                」操作：
-              </span>
+          {/* Right side of Row 2: Compact First-Generation Branch Switcher */}
+          {activeTab === 'tree' && (
+            <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl border border-stone-300 text-xs">
+              <span className="text-[11px] font-extrabold text-stone-600 px-1.5">第一代：</span>
               <button
                 type="button"
-                onClick={() => openAddMemberModal(selectedId, 'sibling')}
-                className="px-3 py-1 rounded-lg bg-white hover:bg-sky-50 text-sky-800 border border-sky-300 text-sm font-bold shadow-2xs transition cursor-pointer"
+                onClick={() => setBranchView('both')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  branchView === 'both'
+                    ? 'bg-emerald-700 text-white shadow-2xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
               >
-                + 兄弟姐妹 (同輩)
+                雙家族總覽
               </button>
               <button
                 type="button"
-                onClick={() => openAddMemberModal(selectedId, 'spouse')}
-                disabled={Boolean(getSpouseOf(selectedId, relationships))}
-                className="px-3 py-1 rounded-lg bg-white hover:bg-pink-50 text-pink-800 border border-pink-300 text-sm font-bold shadow-2xs transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => setBranchView('paternal')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  branchView === 'paternal'
+                    ? 'bg-sky-700 text-white shadow-2xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
               >
-                + 配偶 (伴侶)
+                🟦 父系
               </button>
               <button
                 type="button"
-                onClick={() => openAddMemberModal(selectedId, 'child')}
-                className="px-3 py-1 rounded-lg bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-sm font-bold shadow-2xs transition cursor-pointer"
+                onClick={() => setBranchView('maternal')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  branchView === 'maternal'
+                    ? 'bg-amber-700 text-white shadow-2xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
               >
-                + 子女 (下一代)
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsEditorDrawerOpen(true)}
-                className="px-3.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-extrabold shadow-2xs transition cursor-pointer ml-1"
-              >
-                ✏️ 編輯「{selectedMember.name}」個人資料
+                🟧 母系
               </button>
             </div>
           )}
@@ -1852,98 +1927,8 @@ export function App() {
         </div>
       )}
 
-      {/* Main Content Layout */}
-      <main className="max-w-[1600px] mx-auto w-full flex-1 p-6 flex flex-col gap-5">
-        {/* Active Perspective & Lineage Branch Switcher Banner */}
-        <div className="bg-white border-2 border-stone-200 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4 shadow-xs">
-          <div className="flex items-center gap-3.5">
-            {isVisitorPerspective ? (
-              <div className="w-14 h-14 rounded-full flex items-center justify-center font-extrabold text-white text-base shadow-xs shrink-0 bg-stone-500">
-                訪客
-              </div>
-            ) : (
-              <div
-                onClick={() => handleClickMemberCard(perspectiveMember.id)}
-                className={`w-14 h-14 rounded-full flex items-center justify-center font-extrabold text-white text-base shadow-xs shrink-0 cursor-pointer ${perspectiveMember.color}`}
-              >
-                {perspectiveMember.photoUrl ? (
-                  <img
-                    src={perspectiveMember.photoUrl}
-                    alt={perspectiveMember.name}
-                    className="w-full h-full object-cover rounded-full"
-                  />
-                ) : (
-                  perspectiveMember.name.slice(-2)
-                )}
-              </div>
-            )}
-            <div>
-              <div className="text-lg font-extrabold text-stone-900 flex items-center gap-2 flex-wrap">
-                <span>目前稱謂視角：</span>
-                {isVisitorPerspective ? (
-                  <span className="text-emerald-700">訪客</span>
-                ) : (
-                  <>
-                    <span className="text-emerald-700">
-                      {perspectiveMember.name}
-                      {perspectiveMember.nickname ? ` (${perspectiveMember.nickname})` : ''}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => centerMemberInTree(perspectiveId)}
-                      className="text-xs px-2.5 py-1 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold cursor-pointer"
-                    >
-                      🎯 移至畫面正中央
-                    </button>
-                  </>
-                )}
-              </div>
-              <div className="text-sm text-stone-600 font-medium mt-0.5">
-                🖐️ <strong>操作提示：</strong>
-                按住下方白色畫布空白處可<strong>左右上下拖曳移動</strong>；點擊任一成員卡片可<strong>放大檢視照片與詳細資訊</strong>！
-              </div>
-            </div>
-          </div>
-
-          {/* Family Branch Switcher */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-stone-100 p-1.5 rounded-xl border border-stone-300">
-            <span className="text-xs font-extrabold text-stone-600 px-2">第一代顯示：</span>
-            <button
-              type="button"
-              onClick={() => setBranchView('both')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-bold transition cursor-pointer ${
-                branchView === 'both'
-                  ? 'bg-emerald-700 text-white shadow-xs'
-                  : 'text-stone-700 hover:bg-stone-200'
-              }`}
-            >
-              👨‍👩‍👦 雙家族並排總覽
-            </button>
-            <button
-              type="button"
-              onClick={() => setBranchView('paternal')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-bold transition cursor-pointer ${
-                branchView === 'paternal'
-                  ? 'bg-sky-700 text-white shadow-xs'
-                  : 'text-stone-700 hover:bg-stone-200'
-              }`}
-            >
-              🟦 爸爸家族 (父系)
-            </button>
-            <button
-              type="button"
-              onClick={() => setBranchView('maternal')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-bold transition cursor-pointer ${
-                branchView === 'maternal'
-                  ? 'bg-amber-700 text-white shadow-xs'
-                  : 'text-stone-700 hover:bg-stone-200'
-              }`}
-            >
-              🟧 媽媽家族 (母系)
-            </button>
-          </div>
-        </div>
-
+      {/* Main Content Layout (Larger Vertical Space for Tree Canvas) */}
+      <main className="max-w-[1600px] mx-auto w-full flex-1 p-3 sm:p-4 flex flex-col gap-3">
         {/* TAB 1: Grab-to-Pan Family Tree Canvas */}
         {activeTab === 'tree' && (
           <div
@@ -1952,7 +1937,7 @@ export function App() {
             onMouseMove={handleCanvasMouseMove}
             onMouseUp={handleCanvasMouseUpOrLeave}
             onMouseLeave={handleCanvasMouseUpOrLeave}
-            className={`bg-white border-2 border-stone-200 rounded-2xl p-6 overflow-x-auto shadow-xs select-none ${
+            className={`bg-white border-2 border-stone-200 rounded-2xl p-4 sm:p-6 overflow-x-auto shadow-xs select-none flex-1 ${
               isDraggingCanvas ? 'cursor-grabbing' : 'cursor-grab'
             }`}
           >
@@ -2564,13 +2549,51 @@ export function App() {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsEditorDrawerOpen(false)}
-                className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-extrabold text-sm cursor-pointer"
-              >
-                ✕ 關閉視窗
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {canEdit && (
+                  <div className="flex flex-wrap items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
+                    <span className="text-xs font-extrabold text-emerald-900">➕ 新增親屬：</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditorDrawerOpen(false);
+                        openAddMemberModal(selectedId, 'sibling');
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-sky-50 text-sky-800 border border-sky-300 text-xs font-bold cursor-pointer"
+                    >
+                      + 兄弟姐妹
+                    </button>
+                    <button
+                      type="button"
+                      disabled={Boolean(getSpouseOf(selectedId, relationships))}
+                      onClick={() => {
+                        setIsEditorDrawerOpen(false);
+                        openAddMemberModal(selectedId, 'spouse');
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-pink-50 text-pink-800 border border-pink-300 text-xs font-bold cursor-pointer disabled:opacity-40"
+                    >
+                      + 配偶
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditorDrawerOpen(false);
+                        openAddMemberModal(selectedId, 'child');
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold cursor-pointer"
+                    >
+                      + 子女
+                    </button>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsEditorDrawerOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-extrabold text-sm cursor-pointer"
+                >
+                  ✕ 關閉視窗
+                </button>
+              </div>
             </div>
 
             {/* Wide Responsive Multi-Column Form */}
