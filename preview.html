@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>家族族譜系統預覽</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    .tree-line-h {
+      border-top: 2px solid var(--border);
+    }
+    .tree-line-v {
+      border-left: 2px solid var(--border);
+    }
+    .spouse-line {
+      border-top: 2px dashed #ec4899;
+    }
+  </style>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased min-h-screen flex flex-col">
+
+  <!-- Top Navigation & Role Bar -->
+  <header class="bg-[var(--card)] border-b border-[var(--border)] px-6 py-4 sticky top-0 z-20 shadow-sm">
+    <div class="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-lg shadow-sm">
+          族
+        </div>
+        <div>
+          <h1 class="font-bold text-lg leading-tight flex items-center gap-2">
+            陳林家族數位族譜
+            <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 font-medium border border-emerald-500/30">Firebase 架構預覽</span>
+          </h1>
+          <p class="text-xs text-[var(--muted-foreground)]">點擊任一成員可切換「稱謂視角」或查看/編輯詳細檔案</p>
+        </div>
+      </div>
+
+      <!-- Controls: Perspective & Role Simulator -->
+      <div class="flex flex-wrap items-center gap-3">
+        <!-- Perspective Selector -->
+        <div class="flex items-center gap-2 bg-[var(--background)] border border-[var(--border)] rounded-lg px-3 py-1.5">
+          <span class="text-xs text-[var(--muted-foreground)] font-medium">👀 稱謂出發點（以誰為準）：</span>
+          <select id="perspectiveSelect" class="bg-transparent text-sm font-semibold focus:outline-none cursor-pointer">
+          </select>
+        </div>
+
+        <!-- Role Simulator -->
+        <div class="flex items-center gap-2 bg-[var(--background)] border border-[var(--border)] rounded-lg px-3 py-1.5">
+          <span class="text-xs text-[var(--muted-foreground)] font-medium">🔐 模擬登入權限：</span>
+          <select id="roleSelect" class="bg-transparent text-xs font-semibold focus:outline-none cursor-pointer">
+            <option value="admin">Admin 管理員 (可編輯/管權限)</option>
+            <option value="editor">Editor 編輯者 (可改資料/照片)</option>
+            <option value="viewer">Viewer 家族成員 (唯讀查閱)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="max-w-6xl mx-auto mt-4 flex gap-2 border-t border-[var(--border)] pt-3">
+      <button onclick="switchTab('tree')" id="tab-tree" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white transition">
+        🌳 族譜樹狀圖 & 動態稱謂
+      </button>
+      <button onclick="switchTab('kinship')" id="tab-kinship" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[var(--background)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)] transition">
+        🧭 稱謂一覽表
+      </button>
+      <button onclick="switchTab('schema')" id="tab-schema" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[var(--background)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)] transition">
+        🗄️ Firestore 資料表預覽 (JSON)
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="max-w-6xl mx-auto w-full flex-1 p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+    
+    <!-- Left / Center Column (8 cols): Tree or Table -->
+    <div class="lg:col-span-8 flex flex-col gap-4">
+      
+      <!-- Active Perspective Banner -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+        <div class="flex items-center gap-3">
+          <div id="bannerAvatar" class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-sm"></div>
+          <div>
+            <div class="text-sm font-semibold">
+              目前視角：<span id="bannerName" class="text-emerald-500"></span>
+            </div>
+            <div class="text-xs text-[var(--muted-foreground)]">
+              樹狀圖卡片右上角的綠色標籤，代表「<span id="bannerNameSub"></span>」對該位親戚的稱呼
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+          <span class="inline-block w-3 h-0.5 bg-pink-500"></span> 配偶關係
+          <span class="inline-block w-3 h-0.5 bg-gray-400 ml-2"></span> 父母子女
+        </div>
+      </div>
+
+      <!-- TAB 1: Family Tree Visualization -->
+      <div id="view-tree" class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-6 overflow-x-auto shadow-sm">
+        <div class="min-w-[640px] flex flex-col items-center space-y-6">
+          
+          <!-- Generation 1: Maternal Grandparents -->
+          <div class="w-full flex flex-col items-center">
+            <div class="text-xs font-medium text-[var(--muted-foreground)] mb-2 px-2.5 py-0.5 rounded-full bg-[var(--background)] border border-[var(--border)]">
+              第一代（外公、外婆）
+            </div>
+            <div class="flex items-center justify-center gap-6 relative">
+              <div id="node-grandpa"></div>
+              <div class="flex flex-col items-center">
+                <span class="text-xs text-pink-500 font-medium mb-1">配偶</span>
+                <div class="w-10 spouse-line"></div>
+              </div>
+              <div id="node-grandma"></div>
+            </div>
+            <!-- Connector down to Gen 2 (Mother) -->
+            <div class="h-6 tree-line-v"></div>
+          </div>
+
+          <!-- Generation 2: Father & Mother -->
+          <div class="w-full flex flex-col items-center">
+            <div class="text-xs font-medium text-[var(--muted-foreground)] mb-2 px-2.5 py-0.5 rounded-full bg-[var(--background)] border border-[var(--border)]">
+              第二代（爸媽）
+            </div>
+            <div class="flex items-center justify-center gap-6">
+              <div id="node-father"></div>
+              <div class="flex flex-col items-center">
+                <span class="text-xs text-pink-500 font-medium mb-1">配偶</span>
+                <div class="w-10 spouse-line"></div>
+              </div>
+              <div id="node-mother"></div>
+            </div>
+            <!-- Connector down to Gen 3 -->
+            <div class="h-5 tree-line-v"></div>
+            <div class="w-64 tree-line-h"></div>
+            <div class="w-64 flex justify-between">
+              <div class="h-4 tree-line-v"></div>
+              <div class="h-4 tree-line-v"></div>
+            </div>
+          </div>
+
+          <!-- Generation 3: Me, Brother & Sister-in-law -->
+          <div class="w-full flex flex-col items-center">
+            <div class="text-xs font-medium text-[var(--muted-foreground)] mb-2 px-2.5 py-0.5 rounded-full bg-[var(--background)] border border-[var(--border)]">
+              第三代（我、哥哥與大嫂）
+            </div>
+            <div class="flex items-start justify-center gap-12">
+              <!-- Me -->
+              <div id="node-me"></div>
+
+              <!-- Brother + Sister-in-law group -->
+              <div class="flex flex-col items-center">
+                <div class="flex items-center gap-5">
+                  <div id="node-brother"></div>
+                  <div class="flex flex-col items-center">
+                    <span class="text-xs text-pink-500 font-medium mb-1">配偶</span>
+                    <div class="w-8 spouse-line"></div>
+                  </div>
+                  <div id="node-sil"></div>
+                </div>
+                <!-- Connector down to Gen 4 (Nieces) -->
+                <div class="h-5 tree-line-v"></div>
+                <div class="w-44 tree-line-h"></div>
+                <div class="w-44 flex justify-between">
+                  <div class="h-4 tree-line-v"></div>
+                  <div class="h-4 tree-line-v"></div>
+                </div>
+
+                <!-- Generation 4: Two Daughters -->
+                <div class="text-xs font-medium text-[var(--muted-foreground)] my-1.5 px-2.5 py-0.5 rounded-full bg-[var(--background)] border border-[var(--border)]">
+                  第四代（哥哥與大嫂的女兒）
+                </div>
+                <div class="flex items-center gap-6 mt-1">
+                  <div id="node-nieceA"></div>
+                  <div id="node-nieceB"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- TAB 2: Kinship Matrix View -->
+      <div id="view-kinship" class="hidden bg-[var(--card)] border border-[var(--border)] rounded-xl p-6 shadow-sm">
+        <h3 class="font-bold text-base mb-1">🧭 動態親屬稱謂對照表</h3>
+        <p class="text-xs text-[var(--muted-foreground)] mb-4">
+          系統不寫死稱謂，而是根據「父母 (parent)」與「配偶 (spouse)」關係鏈自動推算：
+        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr class="border-b border-[var(--border)] text-xs text-[var(--muted-foreground)]">
+                <th class="py-2.5 px-3">目標成員</th>
+                <th class="py-2.5 px-3">世代</th>
+                <th class="py-2.5 px-3">關係路徑推導</th>
+                <th class="py-2.5 px-3">「<span id="tablePerspectiveName" class="text-emerald-500 font-bold"></span>」對他的稱呼</th>
+                <th class="py-2.5 px-3">他對「<span id="tablePerspectiveName2" class="text-emerald-500 font-bold"></span>」的稱呼</th>
+              </tr>
+            </thead>
+            <tbody id="kinshipTableBody" class="divide-y divide-[var(--border)] text-xs">
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 3: Firestore Schema Preview -->
+      <div id="view-schema" class="hidden bg-[var(--card)] border border-[var(--border)] rounded-xl p-6 shadow-sm space-y-4">
+        <div>
+          <h3 class="font-bold text-base mb-1">🗄️ Firebase Firestore 實際儲存結構</h3>
+          <p class="text-xs text-[var(--muted-foreground)]">
+            分為 `members`（個人資料）與 `relationships`（關係圖譜），新增任何成員都不會破壞現有架構。
+          </p>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-3">
+            <div class="text-xs font-bold text-emerald-500 mb-2">Collection: members (節錄當前選中成員)</div>
+            <pre id="jsonMemberPreview" class="text-xs overflow-x-auto leading-relaxed"></pre>
+          </div>
+          <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-3">
+            <div class="text-xs font-bold text-pink-500 mb-2">Collection: relationships (全家族 13 條核心關係)</div>
+            <pre id="jsonRelPreview" class="text-xs overflow-x-auto leading-relaxed max-h-72"></pre>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column (4 cols): Member Profile & Editor Drawer -->
+    <div class="lg:col-span-4 flex flex-col gap-4">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 shadow-sm sticky top-28">
+        <div class="flex items-center justify-between border-b border-[var(--border)] pb-3 mb-4">
+          <div class="flex items-center gap-3">
+            <div id="detailAvatar" class="w-12 h-12 rounded-full flex items-center justify-center font-bold text-white text-base shadow-sm"></div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 id="detailTitle" class="font-bold text-base"></h2>
+                <span id="detailKinshipBadge" class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 font-semibold"></span>
+              </div>
+              <p id="detailSubtitle" class="text-xs text-[var(--muted-foreground)] mt-0.5"></p>
+            </div>
+          </div>
+          <button onclick="setAsPerspective()" class="text-xs px-2.5 py-1.5 rounded-lg border border-emerald-500/40 text-emerald-500 hover:bg-emerald-500/10 font-medium transition">
+            設為出發點
+          </button>
+        </div>
+
+        <!-- Privacy Notice for Minors -->
+        <div id="minorPrivacyAlert" class="hidden mb-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-500 text-xs">
+          🛡️ <strong>未成年資料保護：</strong> 此成員為未成年，僅限已登入之家族成員查看照片與生日。
+        </div>
+
+        <!-- Profile Form -->
+        <form id="profileForm" onsubmit="saveMember(event)" class="space-y-3 text-xs">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[var(--muted-foreground)] mb-1">姓名 / 暱稱 *</label>
+              <input id="inputName" type="text" required class="w-full px-2.5 py-1.5 rounded-lg bg-[var(--background)] border border-[var(--border)] focus:outline-none focus:border-emerald-500" />
+            </div>
+            <div>
+              <label class="block text-[var(--muted-foreground)] mb-1">性別</label>
+              <select id="inputGender" class="w-full px-2.5 py-1.5 rounded-lg bg-[var(--background)] border border-[var(--border)] focus:outline-none">
+                <option value="M">男 (Male)</option>
+                <option value="F">女 (Female)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[var(--muted-foreground)] mb-1">🎂 西元生日</label>
+              <input id="inputBirthday" type="date" class="w-full px-2.5 py-1.5 rounded-lg bg-[var(--background)] border border-[var(--border)] focus:outline-none" />
+            </div>
+            <div>
+              <label class="block text-[var(--muted-foreground)] mb-1">🏮 農曆生日 (選填)</label>
+              <input id="inputLunar" type="text" placeholder="例：八月十五" class="w-full px-2.5 py-1.5 rounded-lg bg-[var(--background)] border border-[var(--border)] focus:outline-none" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[var(--muted-foreground)] mb-1">💬 LINE ID</label>
+              <input id="inputLine" type="text" placeholder="輸入 LINE ID" class="w-full px-2.5 py-1.5 rounded-lg bg-[var(--background)] border border-[var(--border)] focus:outline-none" />
+            </div>
+            <div>
+              <label class="block text-[var(--muted-foreground)] mb-1">📘 Facebook</label>
+              <input id="inputFb" type="text" placeholder="fb.com/..." class="w-full px-2.5 py-1.5 rounded-lg bg-[var(--background)] border border-[var(--border)] focus:outline-none" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[var(--muted-foreground)] mb-1">📍 居住縣市</label>
+              <input id="inputCity" type="text" placeholder="例：台北市" class="w-full px-2.5 py-1.5 rounded-lg bg-[var(--background)] border border-[var(--border)] focus:outline-none" />
+            </div>
+            <div>
+              <label class="block text-[var(--muted-foreground)] mb-1">📷 照片上傳 (Storage)</label>
+              <label id="uploadLabel" class="w-full px-2.5 py-1.5 rounded-lg bg-[var(--background)] border border-dashed border-[var(--border)] flex items-center justify-center cursor-pointer hover:border-emerald-500 transition text-[var(--muted-foreground)]">
+                <span>選擇照片檔...</span>
+                <input id="inputPhoto" type="file" accept="image/*" class="hidden" onchange="simulatePhotoUpload(event)" />
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-[var(--muted-foreground)] mb-1">📝 個人介紹與備註</label>
+            <textarea id="inputBio" rows="2" class="w-full px-2.5 py-1.5 rounded-lg bg-[var(--background)] border border-[var(--border)] focus:outline-none"></textarea>
+          </div>
+
+          <!-- Save / Role Permission Notice -->
+          <div class="pt-2 flex items-center justify-between">
+            <span id="rolePermissionHint" class="text-xs text-emerald-500 font-medium">✓ 您目前擁有編輯權限</span>
+            <button id="saveBtn" type="submit" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition shadow-sm">
+              儲存變更
+            </button>
+          </div>
+          <div id="saveToast" class="hidden text-center py-1.5 rounded bg-emerald-500/20 text-emerald-400 text-xs font-medium">
+            ✅ 已更新成員資料（同步更新樹狀圖與 JSON）！
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // 1. Initial 9 Family Members Data
+    const members = {
+      grandpa: {
+        id: 'grandpa',
+        roleLabel: '外公',
+        name: '林水源',
+        gender: 'M',
+        generation: 1,
+        birthOrder: 1,
+        birthday: '1942-03-15',
+        lunarBirthday: '正月廿九',
+        lineId: 'lin_grandpa',
+        fbUrl: 'fb.com/water.lin',
+        city: '台南市',
+        bio: '喜歡泡茶、種蘭花，退休國小主任。',
+        color: 'bg-amber-600',
+        isMinor: false
+      },
+      grandma: {
+        id: 'grandma',
+        roleLabel: '外婆',
+        name: '陳玉蘭',
+        gender: 'F',
+        generation: 1,
+        birthOrder: 2,
+        birthday: '1945-10-22',
+        lunarBirthday: '九月十七',
+        lineId: 'yulan_chen',
+        fbUrl: 'fb.com/yulan.chen',
+        city: '台南市',
+        bio: '拿手菜是紅燒肉與肉粽，家族精神領袖。',
+        color: 'bg-rose-600',
+        isMinor: false
+      },
+      father: {
+        id: 'father',
+        roleLabel: '爸爸',
+        name: '郭建宏',
+        gender: 'M',
+        generation: 2,
+        birthOrder: 1,
+        birthday: '1968-06-12',
+        lunarBirthday: '五月十七',
+        lineId: 'kuo_dad68',
+        fbUrl: 'fb.com/chienhung.kuo',
+        city: '台中市',
+        bio: '熱愛登山與攝影，負責記錄家族旅遊。',
+        color: 'bg-blue-600',
+        isMinor: false
+      },
+      mother: {
+        id: 'mother',
+        roleLabel: '媽媽',
+        name: '林淑芬',
+        gender: 'F',
+        generation: 2,
+        birthOrder: 1,
+        birthday: '1970-11-08',
+        lunarBirthday: '十月初十',
+        lineId: 'shufen_lin',
+        fbUrl: 'fb.com/shufen.lin',
+        city: '台中市',
+        bio: '外公外婆的女兒，喜歡烘焙與園藝。',
+        color: 'bg-pink-600',
+        isMinor: false
+      },
+      brother: {
+        id: 'brother',
+        roleLabel: '哥哥',
+        name: '郭哲瑋',
+        gender: 'M',
+        generation: 3,
+        birthOrder: 1,
+        birthday: '1994-04-20',
+        lunarBirthday: '三月初十',
+        lineId: 'wei_kuo94',
+        fbUrl: 'fb.com/chewei.kuo',
+        city: '新竹市',
+        bio: '長子，竹科工程師，兩個女兒的爸。',
+        color: 'bg-indigo-600',
+        isMinor: false
+      },
+      sil: {
+        id: 'sil',
+        roleLabel: '大嫂',
+        name: '張雅婷',
+        gender: 'F',
+        generation: 3,
+        birthOrder: 1,
+        birthday: '1995-08-14',
+        lunarBirthday: '七月十九',
+        lineId: 'yating_chang',
+        fbUrl: 'fb.com/yating.chang',
+        city: '新竹市',
+        bio: '哥哥的配偶，溫柔細心，擅長親子手作。',
+        color: 'bg-purple-600',
+        isMinor: false
+      },
+      me: {
+        id: 'me',
+        roleLabel: '我 (本人)',
+        name: '郭宇軒',
+        gender: 'M',
+        generation: 3,
+        birthOrder: 2,
+        birthday: '1997-09-03',
+        lunarBirthday: '八月初二',
+        lineId: 'daniel_kuo',
+        fbUrl: 'fb.com/daniel.kuo',
+        city: '台北市',
+        bio: '次子，家族網站管理員，負責建置數位族譜。',
+        color: 'bg-emerald-600',
+        isMinor: false
+      },
+      nieceA: {
+        id: 'nieceA',
+        roleLabel: '女兒 A (大姪女)',
+        name: '郭小晴',
+        gender: 'F',
+        generation: 4,
+        birthOrder: 1,
+        birthday: '2022-05-10',
+        lunarBirthday: '四月初十',
+        lineId: '(由父母管理)',
+        fbUrl: '(不公開)',
+        city: '新竹市',
+        bio: '哥哥與大嫂的大女兒，喜歡畫畫與唱歌。',
+        color: 'bg-teal-600',
+        isMinor: true
+      },
+      nieceB: {
+        id: 'nieceB',
+        roleLabel: '女兒 B (小姪女)',
+        name: '郭小希',
+        gender: 'F',
+        generation: 4,
+        birthOrder: 2,
+        birthday: '2024-12-01',
+        lunarBirthday: '十一月初一',
+        lineId: '(由父母管理)',
+        fbUrl: '(不公開)',
+        city: '新竹市',
+        bio: '哥哥與大嫂的小女兒，家族最年幼開心果。',
+        color: 'bg-cyan-600',
+        isMinor: true
+      }
+    };
+
+    // 2. Core Relationships Collection (Firestore format)
+    const relationships = [
+      { fromId: 'grandpa', toId: 'grandma', type: 'spouse' },
+      { fromId: 'grandpa', toId: 'mother',  type: 'parent' },
+      { fromId: 'grandma', toId: 'mother',  type: 'parent' },
+      { fromId: 'father',  toId: 'mother',  type: 'spouse' },
+      { fromId: 'father',  toId: 'brother', type: 'parent' },
+      { fromId: 'mother',  toId: 'brother', type: 'parent' },
+      { fromId: 'father',  toId: 'me',      type: 'parent' },
+      { fromId: 'mother',  toId: 'me',      type: 'parent' },
+      { fromId: 'brother', toId: 'sil',     type: 'spouse' },
+      { fromId: 'brother', toId: 'nieceA',  type: 'parent' },
+      { fromId: 'sil',     toId: 'nieceA',  type: 'parent' },
+      { fromId: 'brother', toId: 'nieceB',  type: 'parent' },
+      { fromId: 'sil',     toId: 'nieceB',  type: 'parent' }
+    ];
+
+    // 3. Complete Kinship Title Lookup (From Perspective -> Target)
+    // Computed via graph relation rules for the 9 family members
+    const kinshipMatrix = {
+      me: {
+        me:      { title: '自己 (本人)', path: '本人' },
+        grandpa: { title: '外公', path: '媽媽 → 父親' },
+        grandma: { title: '外婆', path: '媽媽 → 母親' },
+        father:  { title: '爸爸', path: '直系父親' },
+        mother:  { title: '媽媽', path: '直系母親' },
+        brother: { title: '哥哥', path: '同父母 (年長男)' },
+        sil:     { title: '大嫂', path: '哥哥 → 配偶' },
+        nieceA:  { title: '姪女 (大姪女)', path: '哥哥 → 長女' },
+        nieceB:  { title: '姪女 (小姪女)', path: '哥哥 → 次女' }
+      },
+      brother: {
+        brother: { title: '自己 (本人)', path: '本人' },
+        grandpa: { title: '外公', path: '媽媽 → 父親' },
+        grandma: { title: '外婆', path: '媽媽 → 母親' },
+        father:  { title: '爸爸', path: '直系父親' },
+        mother:  { title: '媽媽', path: '直系母親' },
+        me:      { title: '弟弟', path: '同父母 (年幼男)' },
+        sil:     { title: '老婆 / 太太', path: '配偶' },
+        nieceA:  { title: '大女兒', path: '直系長女' },
+        nieceB:  { title: '小女兒', path: '直系次女' }
+      },
+      sil: {
+        sil:     { title: '自己 (本人)', path: '本人' },
+        grandpa: { title: '外公 (跟隨丈夫稱呼)', path: '丈夫 → 媽媽 → 父親' },
+        grandma: { title: '外婆 (跟隨丈夫稱呼)', path: '丈夫 → 媽媽 → 母親' },
+        father:  { title: '公公 (爸爸)', path: '丈夫 → 父親' },
+        mother:  { title: '婆婆 (媽媽)', path: '丈夫 → 母親' },
+        brother: { title: '老公 / 先生', path: '配偶' },
+        me:      { title: '小叔', path: '丈夫 → 弟弟' },
+        nieceA:  { title: '大女兒', path: '直系長女' },
+        nieceB:  { title: '小女兒', path: '直系次女' }
+      },
+      father: {
+        father:  { title: '自己 (本人)', path: '本人' },
+        grandpa: { title: '岳父 (丈人)', path: '妻子 → 父親' },
+        grandma: { title: '岳母 (丈母娘)', path: '妻子 → 母親' },
+        mother:  { title: '老婆 / 太太', path: '配偶' },
+        brother: { title: '大兒子 (長子)', path: '直系長子' },
+        sil:     { title: '大媳婦', path: '長子 → 配偶' },
+        me:      { title: '小兒子 (次子)', path: '直系次子' },
+        nieceA:  { title: '大孫女 (內孫女)', path: '長子 → 長女' },
+        nieceB:  { title: '小孫女 (內孫女)', path: '長子 → 次女' }
+      },
+      mother: {
+        mother:  { title: '自己 (本人)', path: '本人' },
+        grandpa: { title: '爸爸', path: '直系父親' },
+        grandma: { title: '媽媽', path: '直系母親' },
+        father:  { title: '老公 / 先生', path: '配偶' },
+        brother: { title: '大兒子 (長子)', path: '直系長子' },
+        sil:     { title: '大媳婦', path: '長子 → 配偶' },
+        me:      { title: '小兒子 (次子)', path: '直系次子' },
+        nieceA:  { title: '大孫女 (內孫女)', path: '長子 → 長女' },
+        nieceB:  { title: '小孫女 (內孫女)', path: '長子 → 次女' }
+      },
+      grandpa: {
+        grandpa: { title: '自己 (本人)', path: '本人' },
+        grandma: { title: '老婆 / 老伴', path: '配偶' },
+        father:  { title: '女婿', path: '女兒 → 配偶' },
+        mother:  { title: '女兒', path: '直系女兒' },
+        brother: { title: '大外孫', path: '女兒 → 長子' },
+        sil:     { title: '外孫媳婦', path: '女兒 → 長子 → 配偶' },
+        me:      { title: '小外孫', path: '女兒 → 次子' },
+        nieceA:  { title: '外曾孫女 (大)', path: '女兒 → 長子 → 長女' },
+        nieceB:  { title: '外曾孫女 (小)', path: '女兒 → 長子 → 次女' }
+      },
+      grandma: {
+        grandma: { title: '自己 (本人)', path: '本人' },
+        grandpa: { title: '老公 / 老伴', path: '配偶' },
+        father:  { title: '女婿', path: '女兒 → 配偶' },
+        mother:  { title: '女兒', path: '直系女兒' },
+        brother: { title: '大外孫', path: '女兒 → 長子' },
+        sil:     { title: '外孫媳婦', path: '女兒 → 長子 → 配偶' },
+        me:      { title: '小外孫', path: '女兒 → 次子' },
+        nieceA:  { title: '外曾孫女 (大)', path: '女兒 → 長子 → 長女' },
+        nieceB:  { title: '外曾孫女 (小)', path: '女兒 → 長子 → 次女' }
+      },
+      nieceA: {
+        nieceA:  { title: '自己 (本人)', path: '本人' },
+        grandpa: { title: '太公 (外曾祖父)', path: '爸爸 → 媽媽 → 父親' },
+        grandma: { title: '太婆 (外曾祖母)', path: '爸爸 → 媽媽 → 母親' },
+        father:  { title: '阿公 (爺爺)', path: '爸爸 → 父親' },
+        mother:  { title: '阿嬤 (奶奶)', path: '爸爸 → 母親' },
+        brother: { title: '爸爸', path: '直系父親' },
+        sil:     { title: '媽媽', path: '直系母親' },
+        me:      { title: '叔叔', path: '爸爸 → 弟弟' },
+        nieceB:  { title: '妹妹', path: '同父母 (年幼女)' }
+      },
+      nieceB: {
+        nieceB:  { title: '自己 (本人)', path: '本人' },
+        grandpa: { title: '太公 (外曾祖父)', path: '爸爸 → 媽媽 → 父親' },
+        grandma: { title: '太婆 (外曾祖母)', path: '爸爸 → 媽媽 → 母親' },
+        father:  { title: '阿公 (爺爺)', path: '爸爸 → 父親' },
+        mother:  { title: '阿嬤 (奶奶)', path: '爸爸 → 母親' },
+        brother: { title: '爸爸', path: '直系父親' },
+        sil:     { title: '媽媽', path: '直系母親' },
+        me:      { title: '叔叔', path: '爸爸 → 弟弟' },
+        nieceA:  { title: '姊姊', path: '同父母 (年長女)' }
+      }
+    };
+
+    let currentPerspectiveId = 'me';
+    let selectedMemberId = 'me';
+    let currentRole = 'admin';
+
+    function init() {
+      populatePerspectiveSelect();
+      document.getElementById('perspectiveSelect').addEventListener('change', (e) => {
+        currentPerspectiveId = e.target.value;
+        renderAll();
+      });
+      document.getElementById('roleSelect').addEventListener('change', (e) => {
+        currentRole = e.target.value;
+        updateRolePermissionsUI();
+      });
+      renderAll();
+    }
+
+    function populatePerspectiveSelect() {
+      const select = document.getElementById('perspectiveSelect');
+      select.innerHTML = '';
+      Object.values(members).forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = `${m.name} (${m.roleLabel})`;
+        if (m.id === currentPerspectiveId) opt.selected = true;
+        select.appendChild(opt);
+      });
+    }
+
+    function renderNodeCard(memberId) {
+      const m = members[memberId];
+      const kin = kinshipMatrix[currentPerspectiveId][memberId];
+      const isSelected = selectedMemberId === memberId;
+      const isPerspective = currentPerspectiveId === memberId;
+
+      return `
+        <div onclick="selectMember('${m.id}')" 
+             class="w-44 rounded-xl p-3 cursor-pointer transition border text-left relative shadow-sm
+                    ${isSelected ? 'ring-2 ring-emerald-500 border-emerald-500 bg-[var(--card)]' : 'border-[var(--border)] bg-[var(--background)] hover:border-emerald-500/50'}">
+          
+          <!-- Kinship Title Badge -->
+          <div class="flex items-center justify-between gap-1 mb-2">
+            <span class="text-xs px-2 py-0.5 rounded-full font-semibold truncate
+                         ${isPerspective ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' : 'bg-emerald-500/15 text-emerald-500'}">
+              ${isPerspective ? '🎯 出發點本人' : kin.title}
+            </span>
+            <span class="text-xs text-[var(--muted-foreground)]">${m.gender === 'M' ? '♂' : '♀'}</span>
+          </div>
+
+          <!-- Avatar + Name -->
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-full ${m.color} text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-sm overflow-hidden">
+              ${m.photoUrl ? `<img src="${m.photoUrl}" class="w-full h-full object-cover" />` : m.name.slice(-2)}
+            </div>
+            <div class="min-w-0">
+              <div class="font-bold text-sm truncate">${m.name}</div>
+              <div class="text-xs text-[var(--muted-foreground)] truncate">🎂 ${m.birthday.slice(5)}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderAll() {
+      // Update Banner
+      const pMember = members[currentPerspectiveId];
+      const bannerAvatar = document.getElementById('bannerAvatar');
+      bannerAvatar.className = `w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-sm ${pMember.color}`;
+      bannerAvatar.textContent = pMember.name.slice(-2);
+      document.getElementById('bannerName').textContent = `${pMember.name}（${pMember.roleLabel}）`;
+      document.getElementById('bannerNameSub').textContent = pMember.name;
+
+      // Render Tree Nodes
+      Object.keys(members).forEach(id => {
+        const container = document.getElementById(`node-${id}`);
+        if (container) {
+          container.innerHTML = renderNodeCard(id);
+        }
+      });
+
+      // Render Kinship Table
+      renderKinshipTable();
+
+      // Render Detail Form
+      renderDetailDrawer();
+
+      // Render Schema JSON
+      renderSchemaPreview();
+
+      // Update Role UI
+      updateRolePermissionsUI();
+    }
+
+    function selectMember(id) {
+      selectedMemberId = id;
+      renderAll();
+    }
+
+    function setAsPerspective() {
+      currentPerspectiveId = selectedMemberId;
+      populatePerspectiveSelect();
+      renderAll();
+    }
+
+    function renderDetailDrawer() {
+      const m = members[selectedMemberId];
+      const kin = kinshipMatrix[currentPerspectiveId][selectedMemberId];
+
+      const avatar = document.getElementById('detailAvatar');
+      avatar.className = `w-12 h-12 rounded-full flex items-center justify-center font-bold text-white text-base shadow-sm overflow-hidden ${m.color}`;
+      avatar.innerHTML = m.photoUrl ? `<img src="${m.photoUrl}" class="w-full h-full object-cover" />` : m.name.slice(-2);
+
+      document.getElementById('detailTitle').textContent = m.name;
+      document.getElementById('detailKinshipBadge').textContent = kin.title;
+      document.getElementById('detailSubtitle').textContent = `第 ${m.generation} 代 · 關係路徑：${kin.path}`;
+
+      const minorAlert = document.getElementById('minorPrivacyAlert');
+      if (m.isMinor) {
+        minorAlert.classList.remove('hidden');
+      } else {
+        minorAlert.classList.add('hidden');
+      }
+
+      document.getElementById('inputName').value = m.name;
+      document.getElementById('inputGender').value = m.gender;
+      document.getElementById('inputBirthday').value = m.birthday;
+      document.getElementById('inputLunar').value = m.lunarBirthday;
+      document.getElementById('inputLine').value = m.lineId;
+      document.getElementById('inputFb').value = m.fbUrl;
+      document.getElementById('inputCity').value = m.city;
+      document.getElementById('inputBio').value = m.bio;
+    }
+
+    function updateRolePermissionsUI() {
+      const isReadOnly = currentRole === 'viewer';
+      const inputs = ['inputName', 'inputGender', 'inputBirthday', 'inputLunar', 'inputLine', 'inputFb', 'inputCity', 'inputBio', 'inputPhoto'];
+      inputs.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = isReadOnly;
+      });
+
+      const saveBtn = document.getElementById('saveBtn');
+      const hint = document.getElementById('rolePermissionHint');
+
+      if (isReadOnly) {
+        saveBtn.classList.add('opacity-40', 'cursor-not-allowed');
+        saveBtn.disabled = true;
+        hint.textContent = '🔒 Viewer 唯讀模式（無法修改資料）';
+        hint.className = 'text-xs text-amber-500 font-medium';
+      } else {
+        saveBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+        saveBtn.disabled = false;
+        hint.textContent = currentRole === 'admin' ? '✓ Admin 完整管理權限' : '✓ Editor 編輯維護權限';
+        hint.className = 'text-xs text-emerald-500 font-medium';
+      }
+    }
+
+    function saveMember(e) {
+      e.preventDefault();
+      if (currentRole === 'viewer') return;
+
+      const m = members[selectedMemberId];
+      m.name = document.getElementById('inputName').value;
+      m.gender = document.getElementById('inputGender').value;
+      m.birthday = document.getElementById('inputBirthday').value;
+      m.lunarBirthday = document.getElementById('inputLunar').value;
+      m.lineId = document.getElementById('inputLine').value;
+      m.fbUrl = document.getElementById('inputFb').value;
+      m.city = document.getElementById('inputCity').value;
+      m.bio = document.getElementById('inputBio').value;
+
+      populatePerspectiveSelect();
+      renderAll();
+
+      const toast = document.getElementById('saveToast');
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 2500);
+    }
+
+    function simulatePhotoUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        members[selectedMemberId].photoUrl = evt.target.result;
+        renderAll();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function renderKinshipTable() {
+      const pMember = members[currentPerspectiveId];
+      document.getElementById('tablePerspectiveName').textContent = pMember.name;
+      document.getElementById('tablePerspectiveName2').textContent = pMember.name;
+
+      const tbody = document.getElementById('kinshipTableBody');
+      tbody.innerHTML = '';
+
+      Object.values(members).forEach(target => {
+        const forward = kinshipMatrix[currentPerspectiveId][target.id];
+        const reverse = kinshipMatrix[target.id][currentPerspectiveId];
+
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-[var(--background)] cursor-pointer transition';
+        tr.onclick = () => selectMember(target.id);
+        tr.innerHTML = `
+          <td class="py-2.5 px-3 font-semibold flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full ${target.color}"></span>
+            ${target.name} <span class="text-[var(--muted-foreground)] font-normal">(${target.roleLabel})</span>
+          </td>
+          <td class="py-2.5 px-3">第 ${target.generation} 代</td>
+          <td class="py-2.5 px-3 text-[var(--muted-foreground)]">${forward.path}</td>
+          <td class="py-2.5 px-3 font-bold text-emerald-500">${forward.title}</td>
+          <td class="py-2.5 px-3 font-medium">${reverse.title}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderSchemaPreview() {
+      const m = members[selectedMemberId];
+      const firestoreDoc = {
+        id: m.id,
+        name: m.name,
+        gender: m.gender,
+        birthday: m.birthday,
+        lunarBirthday: m.lunarBirthday,
+        lineId: m.lineId,
+        fbUrl: m.fbUrl,
+        city: m.city,
+        generation: m.generation,
+        birthOrder: m.birthOrder,
+        isAlive: true,
+        privacy: m.isMinor ? 'family_only_minor' : 'family_only',
+        updatedAt: '2026-11-05T11:45:00+08:00'
+      };
+      document.getElementById('jsonMemberPreview').textContent = JSON.stringify(firestoreDoc, null, 2);
+      document.getElementById('jsonRelPreview').textContent = JSON.stringify(relationships, null, 2);
+    }
+
+    function switchTab(tab) {
+      ['tree', 'kinship', 'schema'].forEach(t => {
+        const view = document.getElementById(`view-${t}`);
+        const btn = document.getElementById(`tab-${t}`);
+        if (t === tab) {
+          view.classList.remove('hidden');
+          btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white transition';
+        } else {
+          view.classList.add('hidden');
+          btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[var(--background)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)] transition';
+        }
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>
