@@ -234,6 +234,9 @@ export function App() {
     maritalStatus: 'single' as MaritalStatus,
     isAlive: true,
     passingDate: '',
+    lineId: '',
+    fbUrl: '',
+    photoUrl: '',
     bio: ''
   });
 
@@ -775,6 +778,9 @@ export function App() {
       maritalStatus: defaultMarital,
       isAlive: true,
       passingDate: '',
+      lineId: '',
+      fbUrl: '',
+      photoUrl: '',
       bio: ''
     });
     setIsDetailModalOpen(false);
@@ -846,8 +852,9 @@ export function App() {
       maritalStatus: addRelationType === 'spouse' ? 'married' : newMemberDraft.maritalStatus,
       workStatus: newMemberDraft.workStatus,
       workDetail: newMemberDraft.workDetail.trim(),
-      lineId: '',
-      fbUrl: '',
+      lineId: newMemberDraft.lineId.trim(),
+      fbUrl: newMemberDraft.fbUrl.trim(),
+      ...(newMemberDraft.photoUrl ? { photoUrl: newMemberDraft.photoUrl } : {}),
       city: newMemberDraft.city,
       bio: newMemberDraft.bio.trim() || `${anchor.name}的新增親屬。`,
       color,
@@ -1119,6 +1126,16 @@ export function App() {
 
       const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.9);
       let finalPhotoUrl = croppedDataUrl;
+
+      if (isAddModalOpen) {
+        setNewMemberDraft((prev) => ({
+          ...prev,
+          photoUrl: finalPhotoUrl
+        }));
+        setIsCropModalOpen(false);
+        showToast('✂️ 照片已完成裁切！');
+        return;
+      }
 
       if (firebaseConnected) {
         const blob = await new Promise<Blob | null>((resolve) =>
@@ -2588,7 +2605,7 @@ export function App() {
                 </div>
                 <div>
                   <label className="block text-stone-700 font-bold mb-1.5 text-sm">
-                    📧 個人 Gmail（登入自動置中本人）
+                    Email
                   </label>
                   <input
                     type="email"
@@ -2858,7 +2875,7 @@ export function App() {
                   <input
                     type="text"
                     disabled={!canEdit}
-                    placeholder="fb.com/..."
+                    placeholder="facebook.com/..."
                     value={formData.fbUrl}
                     onChange={(e) => setFormData({ ...formData, fbUrl: e.target.value })}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-medium text-stone-900 focus:outline-none focus:border-emerald-600 disabled:opacity-60"
@@ -3079,33 +3096,70 @@ export function App() {
       )}
 
       {/* ===================================================================== */}
-      {/* MODAL 2: Add Family Member Modal */}
+      {/* MODAL 2: Add Family Member Modal (與編輯模式一致之水平垂直置中 + 寬版RWD) */}
       {/* ===================================================================== */}
       {isAddModalOpen && members[addAnchorId] && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white border-2 border-stone-200 rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-stone-200 pb-3">
-              <div>
-                <h3 className="text-xl font-extrabold text-stone-900">➕ 新增家族成員</h3>
-                <p className="text-sm text-stone-600 mt-0.5">
-                  對象基準：<strong>{members[addAnchorId].name}</strong>（第{' '}
-                  {members[addAnchorId].generation} 代）
-                </p>
+        <div
+          onClick={() => setIsAddModalOpen(false)}
+          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-4xl bg-white border-2 border-stone-200 rounded-3xl p-5 sm:p-8 shadow-2xl my-auto max-h-[92vh] overflow-y-auto"
+          >
+            {/* Modal Header */}
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-stone-100 pb-4 mb-5">
+              <div className="flex items-center gap-4">
+                <div
+                  className={`w-16 h-16 rounded-full flex items-center justify-center font-extrabold text-white text-xl shadow-xs overflow-hidden shrink-0 border-2 border-emerald-100 ${
+                    newMemberDraft.isAlive ? 'bg-emerald-600' : 'bg-stone-500'
+                  }`}
+                >
+                  {newMemberDraft.photoUrl ? (
+                    <img
+                      src={newMemberDraft.photoUrl}
+                      alt={newMemberDraft.name || '新成員'}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : newMemberDraft.name.trim() ? (
+                    newMemberDraft.name.trim().slice(-2)
+                  ) : (
+                    '＋'
+                  )}
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="font-extrabold text-2xl text-stone-900">
+                      ➕ 新增家族成員{newMemberDraft.name.trim() ? `：${newMemberDraft.name.trim()}` : ''}
+                    </h2>
+                    {newMemberDraft.nickname && (
+                      <span className="text-sm px-3 py-0.5 rounded-full bg-amber-100 text-amber-900 font-extrabold border border-amber-300">
+                        {newMemberDraft.nickname}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-emerald-700 font-bold mt-1">
+                    對象基準：<strong>{members[addAnchorId].name}</strong>（第{' '}
+                    {members[addAnchorId].generation} 代）·{' '}
+                    {formatWorkDisplay(newMemberDraft.workStatus, newMemberDraft.workDetail)}
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(false)}
-                className="text-stone-500 hover:text-stone-800 font-bold text-lg px-2 cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-extrabold text-sm cursor-pointer"
               >
-                ✕
+                ✕ 關閉視窗
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 bg-stone-100 p-1.5 rounded-xl">
+            {/* Relation Type Tabs */}
+            <div className="grid grid-cols-3 gap-2 bg-stone-100 p-1.5 rounded-2xl mb-5 border border-stone-200">
               <button
                 type="button"
                 onClick={() => setAddRelationType('sibling')}
-                className={`py-2 rounded-lg text-sm font-extrabold transition cursor-pointer ${
+                className={`py-2.5 rounded-xl text-sm font-extrabold transition cursor-pointer ${
                   addRelationType === 'sibling'
                     ? 'bg-sky-700 text-white shadow-xs'
                     : 'text-stone-700 hover:bg-stone-200'
@@ -3117,7 +3171,7 @@ export function App() {
                 type="button"
                 disabled={Boolean(getSpouseOf(addAnchorId, relationships))}
                 onClick={() => setAddRelationType('spouse')}
-                className={`py-2 rounded-lg text-sm font-extrabold transition cursor-pointer disabled:opacity-40 ${
+                className={`py-2.5 rounded-xl text-sm font-extrabold transition cursor-pointer disabled:opacity-40 ${
                   addRelationType === 'spouse'
                     ? 'bg-pink-600 text-white shadow-xs'
                     : 'text-stone-700 hover:bg-stone-200'
@@ -3128,7 +3182,7 @@ export function App() {
               <button
                 type="button"
                 onClick={() => setAddRelationType('child')}
-                className={`py-2 rounded-lg text-sm font-extrabold transition cursor-pointer ${
+                className={`py-2.5 rounded-xl text-sm font-extrabold transition cursor-pointer ${
                   addRelationType === 'child'
                     ? 'bg-emerald-700 text-white shadow-xs'
                     : 'text-stone-700 hover:bg-stone-200'
@@ -3138,10 +3192,14 @@ export function App() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateNewMember} className="space-y-3.5 text-base">
-              <div className="grid grid-cols-12 gap-2.5">
-                <div className="col-span-5">
-                  <label className="block font-bold text-stone-700 mb-1 text-sm">本名 *</label>
+            {/* Wide Responsive Multi-Column Form (Matches Editor Modal Layout) */}
+            <form onSubmit={handleCreateNewMember} className="space-y-5 text-base">
+              {/* Row 1: Basic Identity + Email (RWD 1 -> 2 -> 4 columns) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-stone-700 font-bold mb-1.5 text-sm">
+                    本名 *
+                  </label>
                   <input
                     type="text"
                     required
@@ -3150,25 +3208,39 @@ export function App() {
                     onChange={(e) =>
                       setNewMemberDraft({ ...newMemberDraft, name: e.target.value })
                     }
-                    className="w-full px-3 py-2 rounded-xl border border-stone-300 bg-stone-50 font-bold"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-bold text-stone-900 focus:outline-none focus:border-emerald-600"
                   />
                 </div>
-                <div className="col-span-4">
-                  <label className="block font-bold text-stone-700 mb-1 text-sm">
+                <div>
+                  <label className="block text-stone-700 font-bold mb-1.5 text-sm">
                     英文 / 稱呼
                   </label>
                   <input
                     type="text"
-                    placeholder="例：Daniel / 小滿"
+                    placeholder="例：Daniel / 天福 / 小滿"
                     value={newMemberDraft.nickname}
                     onChange={(e) =>
                       setNewMemberDraft({ ...newMemberDraft, nickname: e.target.value })
                     }
-                    className="w-full px-3 py-2 rounded-xl border border-stone-300 bg-stone-50 font-bold"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-bold text-emerald-800 focus:outline-none focus:border-emerald-600"
                   />
                 </div>
-                <div className="col-span-3">
-                  <label className="block font-bold text-stone-700 mb-1 text-sm">性別</label>
+                <div>
+                  <label className="block text-stone-700 font-bold mb-1.5 text-sm">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="例：imsmallnew@gmail.com"
+                    value={newMemberDraft.email}
+                    onChange={(e) =>
+                      setNewMemberDraft({ ...newMemberDraft, email: e.target.value })
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-bold text-sky-900 focus:outline-none focus:border-emerald-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-stone-700 font-bold mb-1.5 text-sm">性別</label>
                   <select
                     value={newMemberDraft.gender}
                     onChange={(e) =>
@@ -3177,7 +3249,7 @@ export function App() {
                         gender: e.target.value as 'M' | 'F'
                       })
                     }
-                    className="w-full px-2.5 py-2 rounded-xl border border-stone-300 bg-stone-50 font-bold"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-bold text-stone-900 focus:outline-none focus:border-emerald-600"
                   >
                     <option value="M">♂ 男</option>
                     <option value="F">♀ 女</option>
@@ -3185,100 +3257,283 @@ export function App() {
                 </div>
               </div>
 
-              <div>
-                <label className="block font-bold text-stone-700 mb-1 text-sm">
-                  📧 個人 Gmail 信箱（選填，登入時自動對應為本人並置中）
-                </label>
-                <input
-                  type="email"
-                  placeholder="例：member@gmail.com"
-                  value={newMemberDraft.email}
-                  onChange={(e) =>
-                    setNewMemberDraft({ ...newMemberDraft, email: e.target.value })
-                  }
-                  className="w-full px-3 py-2 rounded-xl border border-stone-300 bg-stone-50 font-medium"
-                />
+              {/* Row 2: Marital Status, Living Status, Passing Date & City (RWD 1 -> 2 -> 3 columns) */}
+              <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-3">
+                <div className="text-sm font-extrabold text-stone-700">
+                  👤 個人婚姻、存歿狀態與居住縣市
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm text-stone-600 font-bold mb-1">
+                      婚姻狀態
+                    </label>
+                    <select
+                      value={
+                        addRelationType === 'spouse' ? 'married' : newMemberDraft.maritalStatus
+                      }
+                      disabled={addRelationType === 'spouse'}
+                      onChange={(e) =>
+                        setNewMemberDraft({
+                          ...newMemberDraft,
+                          maritalStatus: e.target.value as MaritalStatus
+                        })
+                      }
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-stone-300 font-bold text-stone-900 focus:outline-none focus:border-emerald-600 disabled:opacity-60"
+                    >
+                      <option value="married">💍 已結婚</option>
+                      <option value="single">🌱 未婚 / 單身</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-stone-600 font-bold mb-1">
+                      存歿狀態
+                    </label>
+                    <select
+                      value={newMemberDraft.isAlive ? 'alive' : 'deceased'}
+                      onChange={(e) => {
+                        const alive = e.target.value === 'alive';
+                        setNewMemberDraft({
+                          ...newMemberDraft,
+                          isAlive: alive
+                        });
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-stone-300 font-bold text-stone-900 focus:outline-none focus:border-emerald-600"
+                    >
+                      <option value="alive">🌿 健在</option>
+                      <option value="deceased">🕊️ 已歿 (仙逝)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-stone-600 font-bold mb-1">
+                      📍 居住縣市
+                    </label>
+                    <select
+                      value={newMemberDraft.city}
+                      onChange={(e) =>
+                        setNewMemberDraft({ ...newMemberDraft, city: e.target.value })
+                      }
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-stone-300 font-bold text-stone-900 focus:outline-none focus:border-emerald-600"
+                    >
+                      {TAIWAN_CITIES.map((city) => (
+                        <option key={city} value={city}>
+                          {city}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {!newMemberDraft.isAlive && (
+                  <div className="pt-2 border-t border-stone-200 max-w-sm">
+                    <label className="block text-sm text-stone-700 font-bold mb-1">
+                      🕊️ 過世日期（仙逝忌日）
+                    </label>
+                    <input
+                      type="date"
+                      value={newMemberDraft.passingDate || ''}
+                      onChange={(e) =>
+                        setNewMemberDraft({ ...newMemberDraft, passingDate: e.target.value })
+                      }
+                      className="w-full px-3.5 py-2 rounded-xl bg-white border border-stone-300 font-medium text-stone-900 focus:outline-none focus:border-emerald-600"
+                    />
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* Row 3: Solar Birthday & Auto Lunar + Age (RWD 1 -> 2 columns) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-bold text-stone-700 mb-1">🎂 國曆生日</label>
+                  <label className="block text-stone-700 font-bold mb-1.5 text-sm">
+                    🎂 國曆生日
+                  </label>
                   <input
                     type="date"
                     value={newMemberDraft.birthday}
                     onChange={(e) =>
                       setNewMemberDraft({ ...newMemberDraft, birthday: e.target.value })
                     }
-                    className="w-full px-3 py-2 rounded-xl border border-stone-300 bg-stone-50 font-medium"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-medium text-stone-900 focus:outline-none focus:border-emerald-600"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-stone-700 mb-1">📍 居住縣市</label>
-                  <select
-                    value={newMemberDraft.city}
-                    onChange={(e) =>
-                      setNewMemberDraft({ ...newMemberDraft, city: e.target.value })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-stone-300 bg-stone-50 font-bold"
-                  >
-                    {TAIWAN_CITIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="block text-stone-700 font-bold mb-1.5 text-sm flex items-center justify-between">
+                    <span>🏮 農曆生日與生肖歲數</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">
+                      自動換算
+                    </span>
+                  </label>
+                  {(() => {
+                    const autoLunar = convertSolarToLunar(
+                      newMemberDraft.birthday,
+                      newMemberDraft.isAlive,
+                      newMemberDraft.passingDate
+                    );
+                    return (
+                      <div className="w-full px-4 py-2 rounded-xl bg-emerald-50/70 border border-emerald-200 font-bold text-emerald-950 flex flex-col justify-center min-h-[46px]">
+                        {autoLunar ? (
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-base font-extrabold text-emerald-800">
+                              農曆 {autoLunar.monthDay}
+                            </span>
+                            <span className="text-xs font-bold text-stone-700">
+                              {autoLunar.subLabel}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-stone-400 text-sm font-normal">
+                            請先選擇國曆生日
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
-              <div className="grid grid-cols-5 gap-2.5">
-                <div className="col-span-2">
-                  <label className="block font-bold text-stone-700 mb-1">工作 / 就學</label>
-                  <select
-                    value={newMemberDraft.workStatus}
-                    onChange={(e) =>
-                      setNewMemberDraft({
-                        ...newMemberDraft,
-                        workStatus: e.target.value as WorkStatus
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-stone-300 bg-stone-50 font-bold"
-                  >
-                    <option value="studying">在學</option>
-                    <option value="working">在職</option>
-                    <option value="retired">退休</option>
-                    <option value="homemaker">家管 / 自由</option>
-                  </select>
+              {/* Row 4: Work / Study Status (RWD 1 -> 3 columns) */}
+              <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-extrabold text-stone-700">
+                    💼 工作 / 就學狀態
+                  </span>
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200">
+                    預覽顯示：{formatWorkDisplay(newMemberDraft.workStatus, newMemberDraft.workDetail)}
+                  </span>
                 </div>
-                <div className="col-span-3">
-                  <label className="block font-bold text-stone-700 mb-1">
-                    公司職稱 / 就讀學校
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs text-stone-600 font-bold mb-1">
+                      狀態類別
+                    </label>
+                    <select
+                      value={newMemberDraft.workStatus}
+                      onChange={(e) =>
+                        setNewMemberDraft({
+                          ...newMemberDraft,
+                          workStatus: e.target.value as WorkStatus
+                        })
+                      }
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-stone-300 font-bold text-stone-900 focus:outline-none focus:border-emerald-600"
+                    >
+                      <option value="studying">在學</option>
+                      <option value="working">在職</option>
+                      <option value="retired">退休</option>
+                      <option value="homemaker">家管 / 自由</option>
+                    </select>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs text-stone-600 font-bold mb-1">
+                      任職公司職稱 / 學校年級
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="例：上校 / 家樂福總部工程師 / 中山國中三年級"
+                      value={newMemberDraft.workDetail}
+                      onChange={(e) =>
+                        setNewMemberDraft({ ...newMemberDraft, workDetail: e.target.value })
+                      }
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-stone-300 font-medium text-stone-900 focus:outline-none focus:border-emerald-600"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 5: Photo Upload with Crop + LINE + Facebook (RWD 1 -> 3 columns) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-stone-700 font-bold mb-1.5 text-sm">
+                    📷 個人照片（支援選取範圍裁切）
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="flex-1 px-3 py-2.5 rounded-xl bg-emerald-50/70 border-2 border-dashed border-emerald-400 flex items-center justify-center transition font-extrabold text-sm cursor-pointer hover:bg-emerald-100 text-emerald-800">
+                      <span>{isUploading ? '處理中...' : '📷 選擇照片並裁切'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={isUploading}
+                        onChange={handlePhotoChange}
+                        className="hidden"
+                      />
+                    </label>
+                    {newMemberDraft.photoUrl && (
+                      <button
+                        type="button"
+                        onClick={() => openCropModalWithDataUrl(newMemberDraft.photoUrl)}
+                        className="px-3 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 font-bold text-xs shrink-0 cursor-pointer"
+                        title="重新調整裁切目前照片"
+                      >
+                        ✂️ 裁切目前照片
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-stone-700 font-bold mb-1.5 text-sm">
+                    💬 LINE ID
                   </label>
                   <input
                     type="text"
-                    placeholder="例：台積電工程師 / 中山國中"
-                    value={newMemberDraft.workDetail}
+                    placeholder="輸入 LINE ID"
+                    value={newMemberDraft.lineId}
                     onChange={(e) =>
-                      setNewMemberDraft({ ...newMemberDraft, workDetail: e.target.value })
+                      setNewMemberDraft({ ...newMemberDraft, lineId: e.target.value })
                     }
-                    className="w-full px-3 py-2 rounded-xl border border-stone-300 bg-stone-50"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-medium text-stone-900 focus:outline-none focus:border-emerald-600"
+                  />
+                </div>
+                <div className="sm:col-span-2 lg:col-span-1">
+                  <label className="block text-stone-700 font-bold mb-1.5 text-sm">
+                    📘 Facebook
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="facebook.com/..."
+                    value={newMemberDraft.fbUrl}
+                    onChange={(e) =>
+                      setNewMemberDraft({ ...newMemberDraft, fbUrl: e.target.value })
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-medium text-stone-900 focus:outline-none focus:border-emerald-600"
                   />
                 </div>
               </div>
 
-              <div className="pt-3 flex items-center justify-end gap-2 border-t border-stone-200">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold cursor-pointer"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold shadow-xs cursor-pointer"
-                >
-                  確認新增成員
-                </button>
+              {/* Row 6: Bio */}
+              <div>
+                <label className="block text-stone-700 font-bold mb-1.5 text-sm">
+                  📝 個人介紹與備註
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="輸入成員介紹或備註..."
+                  value={newMemberDraft.bio}
+                  onChange={(e) =>
+                    setNewMemberDraft({ ...newMemberDraft, bio: e.target.value })
+                  }
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-medium text-stone-900 focus:outline-none focus:border-emerald-600"
+                />
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-4 border-t border-stone-200 flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs font-bold text-emerald-700">
+                  ✓ 按下「確認新增成員」後將自動建立關係並置中該成員
+                </span>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddModalOpen(false)}
+                    className="px-5 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-sm cursor-pointer"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-7 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-extrabold text-base transition shadow-sm cursor-pointer"
+                  >
+                    ➕ 確認新增成員
+                  </button>
+                </div>
               </div>
             </form>
           </div>
