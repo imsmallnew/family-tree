@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 驗證是否為 Google 登入且列於 settings/familyInfo.authorizedEmails 白名單內的授權管理員
+    function isAuthorizedAdmin() {
+      return request.auth != null &&
+        request.auth.token.email != null && (
+          !exists(/databases/$(database)/documents/settings/familyInfo) ||
+          !('authorizedEmails' in get(/databases/$(database)/documents/settings/familyInfo).data) ||
+          get(/databases/$(database)/documents/settings/familyInfo).data.authorizedEmails.size() == 0 ||
+          request.auth.token.email.lower() in get(/databases/$(database)/documents/settings/familyInfo).data.authorizedEmails
+        );
+    }
+
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAuthorizedAdmin();
+    }
+
+    match /members/{memberId} {
+      allow read: if true;
+      allow write: if isAuthorizedAdmin();
+    }
+
+    match /relationships/{relId} {
+      allow read: if true;
+      allow write: if isAuthorizedAdmin();
+    }
+  }
+}
+

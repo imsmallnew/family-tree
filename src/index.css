@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@layer base {
+  html {
+    font-family: "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", system-ui, -apple-system, sans-serif;
+  }
+}
+
+.tree-line-h {
+  border-top: 3px solid #cbd5e1;
+}
+
+.tree-line-v {
+  border-left: 3px solid #cbd5e1;
+}
+
+.spouse-line {
+  border-top: 3px dashed #ec4899;
+}
+
