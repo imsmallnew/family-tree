@@ -45,9 +45,9 @@ type FontScaleType = 'normal' | 'large' | 'xlarge';
 type LineageBranchView = 'both' | 'paternal' | 'maternal';
 type AddRelationType = 'sibling' | 'spouse' | 'child';
 
-const LOCAL_MEMBERS_KEY = 'family_tree_members_v4';
-const LOCAL_RELS_KEY = 'family_tree_rels_v4';
-const LOCAL_SETTINGS_KEY = 'family_tree_settings_v3';
+const LOCAL_MEMBERS_KEY = 'family_tree_members_v5';
+const LOCAL_RELS_KEY = 'family_tree_rels_v5';
+const LOCAL_SETTINGS_KEY = 'family_tree_settings_v4';
 const LOCAL_FONT_SCALE_KEY = 'family_tree_font_scale_v1';
 const LOCAL_REMEMBERED_PASSCODE_KEY = 'family_tree_remembered_passcode_v1';
 
@@ -331,7 +331,7 @@ export function App() {
           try {
             await seedFirestoreIfEmpty(members, relationships, settings);
           } catch (e) {
-            console.warn('Initial Firestore seed warning:', e);
+            console.warn('Initial Firestore sync warning:', e);
           }
           unsubscribeData = subscribeToFamilyData(
             (remoteMembers) => setMembers(mergeWithInitialMembers(remoteMembers)),
@@ -392,7 +392,7 @@ export function App() {
   const handlePasscodeLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanInput = loginPasscodeInput.trim();
-    const expected = settings.familyPasscode || '8888';
+    const expected = settings.familyPasscode || '888888';
 
     if (cleanInput === expected) {
       setLoginError(null);
@@ -421,13 +421,9 @@ export function App() {
 
   // Handlers: Google Gmail Admin Login (Strictly Whitelist Only!)
   const handleGoogleAdminLogin = async () => {
-    if (!firebaseConnected) {
-      setSystemSettingsTab('firebase');
-      setIsSecurityModalOpen(true);
-      return;
-    }
     try {
       const { email, displayName } = await signInWithGooglePopup();
+      setFirebaseConnected(true);
       const normalizedEmail = email.toLowerCase();
       const whitelist = (settings.authorizedEmails || []).map((e) => e.toLowerCase());
       const matched = findMemberByEmail(normalizedEmail, members);
@@ -442,7 +438,7 @@ export function App() {
           authorizedEmails: [normalizedEmail]
         };
         setSettings(updatedSettings);
-        await saveSettingsToFirestore(updatedSettings);
+        await forceSyncAllToFirestore(members, relationships, updatedSettings).catch(() => {});
         setLoginError(null);
         setRole('admin');
         if (matched) {
@@ -454,11 +450,12 @@ export function App() {
           setTimeout(() => centerMemberInTree(matched.id), 200);
         }
         showToast(`歡迎 ${welcomeLabel}！已登入管理員模式`);
-      } else if (whitelist.includes(normalizedEmail)) {
+      } else if (whitelist.includes(normalizedEmail) || Boolean(matched)) {
         setCurrentUserEmail(normalizedEmail);
         setCurrentUserName(displayName);
         setLoginError(null);
         setRole('admin');
+        await forceSyncAllToFirestore(members, relationships, settings).catch(() => {});
         if (matched) {
           setPerspectiveId(matched.id);
           setSelectedId(matched.id);
@@ -480,7 +477,12 @@ export function App() {
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('auth/configuration-not-found') || msg.includes('auth/operation-not-allowed')) {
+      if (msg.includes('auth/unauthorized-domain')) {
+        const domainErrHelp =
+          '⚠️ 請先授權 GitHub Pages 網域（auth/unauthorized-domain）：請至 Firebase Console (family-tree-7fc0c) → 左側「Authentication (驗證)」→「Settings (設定)」→「Authorized domains (已授權網域)」→ 點擊「Add domain (新增網域)」輸入：imsmallnew.github.io 並儲存！';
+        setLoginError(domainErrHelp);
+        showToast('⚠️ 請於 Firebase Console -> Authentication -> Settings 新增授權網域 imsmallnew.github.io');
+      } else if (msg.includes('auth/configuration-not-found') || msg.includes('auth/operation-not-allowed')) {
         const configErrHelp =
           '⚠️ Firebase 尚未完成 Google 登入啟用設定（auth/configuration-not-found）！請至 Firebase Console → 左側「Build → Authentication (驗證)」→ 點擊「開始使用 (Get started)」→ 點選「Sign-in method」中的「Google」→ 開啟「啟用 (Enable)」並選擇「專案支援電子郵件 (Project support email)」後按「儲存 (Save)」。';
         setLoginError(configErrHelp);

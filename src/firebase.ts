@@ -25,6 +25,15 @@ import { DEFAULT_FAMILY_SETTINGS, INITIAL_MEMBERS, INITIAL_RELATIONSHIPS } from 
 
 const STORAGE_KEY_CONFIG = 'family_tree_firebase_config';
 
+export const DEFAULT_FIREBASE_CONFIG: FirebaseConfigInput = {
+  apiKey: 'AIzaSyCUVgLE4LoXmWTEWp26pMobsV_Mvj2pdAw',
+  authDomain: 'family-tree-7fc0c.firebaseapp.com',
+  projectId: 'family-tree-7fc0c',
+  storageBucket: 'family-tree-7fc0c.firebasestorage.app',
+  messagingSenderId: '420931920553',
+  appId: '1:420931920553:web:4daa56d7f85e1b812affb8'
+};
+
 export function getSavedFirebaseConfig(): FirebaseConfigInput | null {
   const envApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
   const envProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
@@ -41,15 +50,16 @@ export function getSavedFirebaseConfig(): FirebaseConfigInput | null {
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CONFIG);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as FirebaseConfigInput;
-    if (parsed.apiKey && parsed.projectId) {
-      return parsed;
+    if (raw) {
+      const parsed = JSON.parse(raw) as FirebaseConfigInput;
+      if (parsed.apiKey && parsed.projectId) {
+        return parsed;
+      }
     }
   } catch {
     // ignore
   }
-  return null;
+  return DEFAULT_FIREBASE_CONFIG;
 }
 
 export function saveFirebaseConfigToStorage(config: FirebaseConfigInput | null) {
@@ -123,7 +133,10 @@ export async function signInWithGooglePopup(): Promise<{
   displayName: string;
 }> {
   if (!auth) {
-    throw new Error('請先完成右上角「☁️ 設定 Firebase 連動」，才能使用 Google 帳號登入。');
+    await initFirebaseConnection(getSavedFirebaseConfig());
+  }
+  if (!auth) {
+    throw new Error('Firebase 尚未完成初始化，請確認系統設定中的 Firebase 金鑰。');
   }
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
