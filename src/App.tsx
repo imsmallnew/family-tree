@@ -536,7 +536,18 @@ export function App() {
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('auth/unauthorized-domain')) {
+      if (
+        msg.includes('auth/popup-closed-by-user') ||
+        msg.includes('auth/cancelled-popup-request')
+      ) {
+        // User closed or cancelled the popup window, do not display a red system error
+        setLoginError(null);
+        showToast('ℹ️ 已取消 Google 登入');
+      } else if (msg.includes('auth/popup-blocked')) {
+        const popupBlockedMsg = '⚠️ 瀏覽器阻擋了 Google 登入彈出視窗，請允許彈出視窗後重試。';
+        setLoginError(popupBlockedMsg);
+        showToast(popupBlockedMsg);
+      } else if (msg.includes('auth/unauthorized-domain')) {
         const domainErrHelp =
           '⚠️ 請先授權 GitHub Pages 網域（auth/unauthorized-domain）：請至 Firebase Console (family-tree-7fc0c) → 左側「Authentication (驗證)」→「Settings (設定)」→「Authorized domains (已授權網域)」→ 點擊「Add domain (新增網域)」輸入：imsmallnew.github.io 並儲存！';
         setLoginError(domainErrHelp);
@@ -2305,68 +2316,75 @@ export function App() {
               {/* ================= GENERATION 1 ================= */}
               {branchView === 'both' && (
                 <div className="flex flex-col items-center">
-                  <div className="flex flex-row items-stretch justify-center gap-8 md:gap-12">
-                    <div className="bg-sky-50/70 border-2 border-sky-300 rounded-3xl p-3 sm:p-4 flex flex-col items-center shrink-0 shadow-xs">
-                      <div className="flex items-center justify-between gap-3 w-full mb-3 px-2">
-                        <span className="text-xs sm:text-sm font-extrabold text-sky-900 px-3 py-1 rounded-full bg-white border border-sky-300">
-                          🟦 父系第一代 · 爸爸家族（爺爺、奶奶）
-                        </span>
-                        {canEdit && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openAddMemberModal('pGrandpa', 'sibling');
-                            }}
-                            className="text-xs px-2.5 py-1 rounded-lg bg-white hover:bg-sky-100 text-sky-800 border border-sky-300 font-bold cursor-pointer"
-                          >
-                            + 新增爺爺同輩
-                          </button>
-                        )}
+                  <div className="flex flex-row items-stretch justify-center gap-8 md:gap-16">
+                    {/* Paternal Gen 1 */}
+                    <div className="flex flex-col items-center">
+                      <div className="bg-sky-50/80 border-2 border-sky-300 rounded-3xl p-3 sm:p-4 flex flex-col items-center shrink-0 shadow-xs">
+                        <div className="flex items-center justify-between gap-3 w-full mb-3 px-2">
+                          <span className="text-xs sm:text-sm font-extrabold text-sky-900 px-3 py-1 rounded-full bg-white border border-sky-300">
+                            🟦 父系第一代 · 爸爸家族（爺爺、奶奶）
+                          </span>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openAddMemberModal('pGrandpa', 'sibling');
+                              }}
+                              className="text-xs px-2.5 py-1 rounded-lg bg-white hover:bg-sky-100 text-sky-800 border border-sky-300 font-bold cursor-pointer"
+                            >
+                              + 新增爺爺同輩
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex flex-row items-start justify-center gap-4 sm:gap-5">
+                          {paternalGen1Ids.map((id) => renderFamilyUnit(id, 99))}
+                        </div>
                       </div>
-                      <div className="flex flex-row items-start justify-center gap-4 sm:gap-5">
-                        {paternalGen1Ids.map((id) => renderFamilyUnit(id, 99))}
+
+                      {/* Line down to Paternal Gen 2 */}
+                      <div className="flex flex-col items-center mt-2">
+                        <div className="h-5 w-0.5 bg-sky-500"></div>
+                        <span className="text-[11px] sm:text-xs font-black text-sky-900 bg-sky-100 px-3 py-0.5 rounded-full border border-sky-300 shadow-2xs">
+                          ↓ 父系血脈傳承（至 爸爸 與 伯叔姑）
+                        </span>
+                        <div className="h-5 w-0.5 bg-sky-500"></div>
                       </div>
                     </div>
 
-                    <div className="bg-amber-50/70 border-2 border-amber-300 rounded-3xl p-3 sm:p-4 flex flex-col items-center shrink-0 shadow-xs">
-                      <div className="flex items-center justify-between gap-3 w-full mb-3 px-2">
-                        <span className="text-xs sm:text-sm font-extrabold text-amber-900 px-3 py-1 rounded-full bg-white border border-amber-300">
-                          🟧 母系第一代 · 媽媽家族（外公、外婆）
-                        </span>
-                        {canEdit && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openAddMemberModal('grandpa', 'sibling');
-                            }}
-                            className="text-xs px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold cursor-pointer"
-                          >
-                            + 新增外公同輩
-                          </button>
-                        )}
+                    {/* Maternal Gen 1 */}
+                    <div className="flex flex-col items-center">
+                      <div className="bg-amber-50/80 border-2 border-amber-300 rounded-3xl p-3 sm:p-4 flex flex-col items-center shrink-0 shadow-xs">
+                        <div className="flex items-center justify-between gap-3 w-full mb-3 px-2">
+                          <span className="text-xs sm:text-sm font-extrabold text-amber-900 px-3 py-1 rounded-full bg-white border border-amber-300">
+                            🟧 母系第一代 · 媽媽家族（外公、外婆）
+                          </span>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openAddMemberModal('grandpa', 'sibling');
+                              }}
+                              className="text-xs px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold cursor-pointer"
+                            >
+                              + 新增外公同輩
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex flex-row items-start justify-center gap-4 sm:gap-5">
+                          {maternalGen1Ids.map((id) => renderFamilyUnit(id, 99))}
+                        </div>
                       </div>
-                      <div className="flex flex-row items-start justify-center gap-4 sm:gap-5">
-                        {maternalGen1Ids.map((id) => renderFamilyUnit(id, 99))}
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="w-full max-w-[560px] flex flex-row items-center justify-between px-8 sm:px-14 mt-1">
-                    <div className="flex flex-col items-center">
-                      <div className="h-5 border-l-3 border-sky-500"></div>
-                      <span className="text-xs font-extrabold text-sky-800 bg-sky-100 px-3 py-0.5 rounded-full border border-sky-300">
-                        ↓ 傳承至爸爸（父系）
-                      </span>
-                      <div className="h-5 border-l-3 border-sky-500"></div>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <div className="h-5 border-l-3 border-amber-500"></div>
-                      <span className="text-xs font-extrabold text-amber-900 bg-amber-100 px-3 py-0.5 rounded-full border border-amber-300">
-                        ↓ 傳承至媽媽（母系）
-                      </span>
-                      <div className="h-5 border-l-3 border-amber-500"></div>
+                      {/* Line down to Maternal Gen 2 */}
+                      <div className="flex flex-col items-center mt-2">
+                        <div className="h-5 w-0.5 bg-amber-500"></div>
+                        <span className="text-[11px] sm:text-xs font-black text-amber-900 bg-amber-100 px-3 py-0.5 rounded-full border border-amber-300 shadow-2xs">
+                          ↓ 母系血脈傳承（至 媽媽 與 舅姨）
+                        </span>
+                        <div className="h-5 w-0.5 bg-amber-500"></div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2396,7 +2414,13 @@ export function App() {
                       {paternalGen1Ids.map((id) => renderFamilyUnit(id, 99))}
                     </div>
                   </div>
-                  <div className="h-7 tree-line-v"></div>
+                  <div className="flex flex-col items-center mt-2">
+                    <div className="h-5 w-0.5 bg-sky-500"></div>
+                    <span className="text-[11px] sm:text-xs font-black text-sky-900 bg-sky-100 px-3 py-0.5 rounded-full border border-sky-300 shadow-2xs">
+                      ↓ 父系血脈傳承（至 爸爸 與 伯叔姑）
+                    </span>
+                    <div className="h-5 w-0.5 bg-sky-500"></div>
+                  </div>
                 </div>
               )}
 
@@ -2424,13 +2448,19 @@ export function App() {
                       {maternalGen1Ids.map((id) => renderFamilyUnit(id, 99))}
                     </div>
                   </div>
-                  <div className="h-7 tree-line-v"></div>
+                  <div className="flex flex-col items-center mt-2">
+                    <div className="h-5 w-0.5 bg-amber-500"></div>
+                    <span className="text-[11px] sm:text-xs font-black text-amber-900 bg-amber-100 px-3 py-0.5 rounded-full border border-amber-300 shadow-2xs">
+                      ↓ 母系血脈傳承（至 媽媽 與 舅姨）
+                    </span>
+                    <div className="h-5 w-0.5 bg-amber-500"></div>
+                  </div>
                 </div>
               )}
 
               {/* ================= GENERATION 2 ================= */}
               <div className="flex flex-col items-center">
-                <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 mb-3">
+                <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 mb-4">
                   <span className="text-xs sm:text-base font-extrabold text-stone-800 px-3 sm:px-4 py-1 rounded-full bg-stone-100 border border-stone-300">
                     {branchView === 'paternal'
                       ? '第二代（爸爸 與 伯叔姑）'
@@ -2468,15 +2498,64 @@ export function App() {
                   )}
                 </div>
 
-                <div className="flex flex-row items-start justify-center gap-4 sm:gap-8">
-                  {branchView !== 'maternal' &&
-                    fatherSiblings.map((sibId) => renderFamilyUnit(sibId, 0))}
-
-                  <div className="flex flex-col items-center">
-                    <div className="bg-rose-50/70 border-2 border-pink-300 rounded-3xl p-3 sm:p-3.5 shadow-xs flex flex-col items-center">
-                      <div className="text-xs font-extrabold text-pink-800 bg-white px-3.5 py-0.5 rounded-full border border-pink-300 mb-2.5 shadow-2xs">
-                        💞 第二代核心夫妻（{members.father?.name} ＆ {members.mother?.name}）
+                {/* 3 distinct blocks with clear horizontal spacing & no overlap: Paternal Siblings (Left), Core Family (Middle), Maternal Siblings (Right) */}
+                <div className="flex flex-row items-start justify-center gap-6 sm:gap-10">
+                  {/* LEFT: Paternal Siblings Block (🟦 父系手足 · 伯叔姑) */}
+                  {branchView !== 'maternal' && (
+                    <div className="bg-sky-50/70 border-2 border-sky-300 rounded-3xl p-3 sm:p-4 flex flex-col items-center shrink-0 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between gap-2 w-full px-1 border-b border-sky-200 pb-2">
+                        <span className="text-xs sm:text-sm font-black text-sky-900 bg-white px-3 py-0.5 rounded-full border border-sky-300 shadow-2xs">
+                          🟦 父系手足（伯叔姑 · 共 {fatherSiblings.length} 支）
+                        </span>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openAddMemberModal('father', 'sibling');
+                            }}
+                            className="text-[11px] px-2 py-0.5 rounded-lg bg-white hover:bg-sky-100 text-sky-800 border border-sky-300 font-bold cursor-pointer"
+                          >
+                            + 新增
+                          </button>
+                        )}
                       </div>
+
+                      {/* Upward Link to Paternal Gen 1 */}
+                      <div className="flex flex-col items-center">
+                        <div className="text-[11px] font-extrabold text-sky-800 bg-white px-2.5 py-0.5 rounded-full border border-sky-300 shadow-2xs flex items-center gap-1">
+                          <span>↑ 向上血緣連結：父系第一代（{members.pGrandpa?.name || '爺爺'} · {members.pGrandma?.name || '奶奶'} 之子女）</span>
+                        </div>
+                        <div className="h-3 w-0.5 bg-sky-400"></div>
+                      </div>
+
+                      <div className="flex flex-row items-start justify-center gap-4 sm:gap-6">
+                        {fatherSiblings.length > 0 ? (
+                          fatherSiblings.map((sibId) => renderFamilyUnit(sibId, 0))
+                        ) : (
+                          <span className="text-xs text-stone-400 py-3 italic">暫無登記其他手足</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* MIDDLE: Core Family Block (💞 爸爸 & 媽媽 ＆ 第三代、第四代傳承) */}
+                  <div className="flex flex-col items-center shrink-0">
+                    <div className="bg-rose-50/80 border-2 border-pink-300 rounded-3xl p-3 sm:p-4 shadow-xs flex flex-col items-center">
+                      <div className="text-xs font-black text-pink-900 bg-white px-3.5 py-0.5 rounded-full border border-pink-300 mb-2 shadow-2xs flex items-center gap-1.5">
+                        <span>💞 第二代核心夫妻（{members.father?.name} ＆ {members.mother?.name}）</span>
+                      </div>
+
+                      {/* Explicit upward links for both Father and Mother */}
+                      <div className="w-full flex items-center justify-between text-[10px] sm:text-[11px] font-extrabold px-3 mb-2 gap-4">
+                        <span className="text-sky-900 bg-sky-100 px-2.5 py-0.5 rounded-full border border-sky-300 shadow-2xs">
+                          ↑ 承接父系第一代（{members.pGrandpa?.name || '爺爺'} 之子）
+                        </span>
+                        <span className="text-amber-900 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-300 shadow-2xs">
+                          承接母系第一代（{members.grandpa?.name || '外公'} 之女） ↑
+                        </span>
+                      </div>
+
                       <div className="flex flex-row items-center justify-center gap-2 sm:gap-3">
                         {renderNodeCard('father', { label: '🟦 父系代表 (爸爸)', isSpouse: false })}
                         <div className="flex flex-col items-center px-1">
@@ -2515,8 +2594,44 @@ export function App() {
                     </div>
                   </div>
 
-                  {branchView !== 'paternal' &&
-                    motherSiblings.map((sibId) => renderFamilyUnit(sibId, 0))}
+                  {/* RIGHT: Maternal Siblings Block (🟧 母系手足 · 舅姨) */}
+                  {branchView !== 'paternal' && (
+                    <div className="bg-amber-50/70 border-2 border-amber-300 rounded-3xl p-3 sm:p-4 flex flex-col items-center shrink-0 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between gap-2 w-full px-1 border-b border-amber-200 pb-2">
+                        <span className="text-xs sm:text-sm font-black text-amber-950 bg-white px-3 py-0.5 rounded-full border border-amber-300 shadow-2xs">
+                          🟧 母系手足（舅姨 · 共 {motherSiblings.length} 支）
+                        </span>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openAddMemberModal('mother', 'sibling');
+                            }}
+                            className="text-[11px] px-2 py-0.5 rounded-lg bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold cursor-pointer"
+                          >
+                            + 新增
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Upward Link to Maternal Gen 1 */}
+                      <div className="flex flex-col items-center">
+                        <div className="text-[11px] font-extrabold text-amber-900 bg-white px-2.5 py-0.5 rounded-full border border-amber-300 shadow-2xs flex items-center gap-1">
+                          <span>↑ 向上血緣連結：母系第一代（{members.grandpa?.name || '外公'} · {members.grandma?.name || '外婆'} 之子女）</span>
+                        </div>
+                        <div className="h-3 w-0.5 bg-amber-400"></div>
+                      </div>
+
+                      <div className="flex flex-row items-start justify-center gap-4 sm:gap-6">
+                        {motherSiblings.length > 0 ? (
+                          motherSiblings.map((sibId) => renderFamilyUnit(sibId, 0))
+                        ) : (
+                          <span className="text-xs text-stone-400 py-3 italic">暫無登記其他手足</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
