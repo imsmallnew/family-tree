@@ -512,11 +512,15 @@ export async function uploadMemberPhoto(memberId: MemberId, file: File): Promise
   if (storage) {
     try {
       const fileRef = ref(storage, `family_photos/${memberId}_${Date.now()}_${file.name}`);
-      await uploadBytes(fileRef, file);
-      const url = await getDownloadURL(fileRef);
+      // 設定 3.5 秒超時保護，避免 Firebase Storage 未設定或權限被阻擋時卡死 120 秒
+      const uploadTask = uploadBytes(fileRef, file).then(() => getDownloadURL(fileRef));
+      const timeoutTask = new Promise<string>((_, reject) =>
+        setTimeout(() => reject(new Error('Firebase Storage upload timed out (3.5s)')), 3500)
+      );
+      const url = await Promise.race([uploadTask, timeoutTask]);
       return url;
     } catch (e) {
-      console.warn('Firebase Storage upload failed, falling back to compressed DataURL:', e);
+      console.warn('Firebase Storage upload failed or timed out, falling back to compressed DataURL:', e);
     }
   }
 

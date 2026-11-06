@@ -1314,13 +1314,38 @@ export function App() {
   // =========================================================================
   const openCropModalWithDataUrl = (dataUrl: string) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    if (dataUrl.startsWith('http')) {
+      img.crossOrigin = 'anonymous';
+    }
     img.onload = () => {
+      let finalSrc = dataUrl;
+      let w = img.naturalWidth || 400;
+      let h = img.naturalHeight || 400;
+
+      // 手機相機照片通常高達 1200萬~4800萬畫素 (4000x3000px)，若直接讀入會導致手勢拖曳與記憶體嚴重卡頓
+      // 先平滑等比例縮放至最長邊 1280px，降低 90% 記憶體負擔並保證極速流暢
+      const MAX_PREVIEW_DIM = 1280;
+      if (w > MAX_PREVIEW_DIM || h > MAX_PREVIEW_DIM) {
+        const scale = Math.min(MAX_PREVIEW_DIM / w, MAX_PREVIEW_DIM / h);
+        const nw = Math.round(w * scale);
+        const nh = Math.round(h * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = nw;
+        canvas.height = nh;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, nw, nh);
+          finalSrc = canvas.toDataURL('image/jpeg', 0.88);
+          w = nw;
+          h = nh;
+        }
+      }
+
       setCropNaturalSize({
-        width: img.naturalWidth || 400,
-        height: img.naturalHeight || 400
+        width: w,
+        height: h
       });
-      setCropImageSrc(dataUrl);
+      setCropImageSrc(finalSrc);
       setCropZoom(1);
       setCropOffset({ x: 0, y: 0 });
       setIsCropModalOpen(true);
@@ -1406,13 +1431,15 @@ export function App() {
     try {
       const img = await new Promise<HTMLImageElement>((resolve, reject) => {
         const image = new Image();
-        image.crossOrigin = 'anonymous';
+        if (cropImageSrc.startsWith('http')) {
+          image.crossOrigin = 'anonymous';
+        }
         image.onload = () => resolve(image);
         image.onerror = (err) => reject(err);
         image.src = cropImageSrc;
       });
 
-      const OUTPUT_SIZE = 420;
+      const OUTPUT_SIZE = 360;
       const canvas = document.createElement('canvas');
       canvas.width = OUTPUT_SIZE;
       canvas.height = OUTPUT_SIZE;
@@ -1436,52 +1463,70 @@ export function App() {
       ctx.fillRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
       ctx.drawImage(img, drawX, drawY, drawW, drawH);
 
-      const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.9);
-      let finalPhotoUrl = croppedDataUrl;
+      // 產生清晰且小於 25KB 的輕量高畫質 JPEG DataURL
+      const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
 
       if (isAddModalOpen) {
         setNewMemberDraft((prev) => ({
           ...prev,
-          photoUrl: finalPhotoUrl
+          photoUrl: croppedDataUrl
         }));
         setIsCropModalOpen(false);
+        setIsUploading(false);
         showToast('✂️ 照片已完成裁切！');
         return;
       }
 
-      if (firebaseConnected) {
-        const blob = await new Promise<Blob | null>((resolve) =>
-          canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.9)
-        );
-        if (blob) {
-          const croppedFile = new File([blob], `cropped_${selectedId}.jpg`, {
-            type: 'image/jpeg'
-          });
-          finalPhotoUrl = await uploadMemberPhoto(selectedId, croppedFile);
-        }
-      }
-
+      // 樂觀更新 (Optimistic UI Update)：立即更新本地資料並關閉彈窗，毫秒級反饋不卡頓
+      const targetId = selectedId;
       const updatedMember: Member = {
-        ...members[selectedId],
+        ...members[targetId],
         ...formData,
-        photoUrl: finalPhotoUrl
+        photoUrl: croppedDataUrl
       };
       setFormData(updatedMember);
       setMembers((prev) => ({
         ...prev,
-        [selectedId]: updatedMember
+        [targetId]: updatedMember
       }));
-
-      if (firebaseConnected) {
-        await saveMemberToFirestore(updatedMember);
-      }
-
       setIsCropModalOpen(false);
+      setIsUploading(false);
       showToast('✂️ 照片已完成裁切並更新！');
+
+      // 背景雲端非同步同步（不阻斷畫面）：
+      if (firebaseConnected) {
+        saveMemberToFirestore(updatedMember).catch((err) => {
+          console.warn('Firestore photo save warning:', err);
+        });
+
+        // 背景嘗試上傳至 Firebase Storage 產生永久公開網址（若 Storage 未開或超時會自動安全降級）
+        canvas.toBlob(async (blob) => {
+          if (!blob) return;
+          try {
+            const croppedFile = new File([blob], `cropped_${targetId}.jpg`, {
+              type: 'image/jpeg'
+            });
+            const storageUrl = await uploadMemberPhoto(targetId, croppedFile);
+            if (storageUrl && storageUrl.startsWith('http')) {
+              const cloudUpdatedMember: Member = {
+                ...updatedMember,
+                photoUrl: storageUrl
+              };
+              setMembers((prev) => ({
+                ...prev,
+                [targetId]: cloudUpdatedMember
+              }));
+              setFormData((prev) => (prev.id === targetId ? cloudUpdatedMember : prev));
+              await saveMemberToFirestore(cloudUpdatedMember);
+            }
+          } catch (storageErr) {
+            console.warn('Background Storage upload skipped or failed:', storageErr);
+          }
+        }, 'image/jpeg', 0.82);
+      }
     } catch (err) {
       console.error('Crop photo error:', err);
       showToast('❌ 照片裁切處理失敗');
-    } finally {
       setIsUploading(false);
     }
   };
