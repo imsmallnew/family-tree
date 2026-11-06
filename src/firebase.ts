@@ -237,7 +237,9 @@ export function subscribeToFamilyData(
           authorizedEmails: Array.isArray(data.authorizedEmails)
             ? data.authorizedEmails.map((e) => e.toLowerCase())
             : DEFAULT_FAMILY_SETTINGS.authorizedEmails,
-          footerText: data.footerText || DEFAULT_FAMILY_SETTINGS.footerText
+          footerText: data.footerText || DEFAULT_FAMILY_SETTINGS.footerText,
+          mobileDefaultZoom: typeof data.mobileDefaultZoom === 'number' ? data.mobileDefaultZoom : DEFAULT_FAMILY_SETTINGS.mobileDefaultZoom,
+          desktopDefaultZoom: typeof data.desktopDefaultZoom === 'number' ? data.desktopDefaultZoom : DEFAULT_FAMILY_SETTINGS.desktopDefaultZoom
         });
       }
     },

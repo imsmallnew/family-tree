@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_FAMILY_SETTINGS,
   INITIAL_MEMBERS,
@@ -143,6 +143,12 @@ export function App() {
   const [footerTextDraft, setFooterTextDraft] = useState(
     settings.footerText || DEFAULT_FAMILY_SETTINGS.footerText || ''
   );
+  const [mobileZoomDraft, setMobileZoomDraft] = useState<number>(
+    settings.mobileDefaultZoom || DEFAULT_FAMILY_SETTINGS.mobileDefaultZoom || 55
+  );
+  const [desktopZoomDraft, setDesktopZoomDraft] = useState<number>(
+    settings.desktopDefaultZoom || DEFAULT_FAMILY_SETTINGS.desktopDefaultZoom || 100
+  );
 
   // 2. State: Entry Gate Authentication (Passcode + Remember Prompt + Google Gmail Auth)
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
@@ -211,9 +217,9 @@ export function App() {
   const [personFocusId, setPersonFocusId] = useState<MemberId>('me');
   const [zoomScale, setZoomScale] = useState<number>(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
-      return 0.55;
+      return (settings.mobileDefaultZoom || 55) / 100;
     }
-    return 1;
+    return (settings.desktopDefaultZoom || 100) / 100;
   });
   const [kinshipSearchQuery, setKinshipSearchQuery] = useState('');
   const [kinshipSourceId, setKinshipSourceId] = useState<MemberId>('me');
@@ -355,6 +361,8 @@ export function App() {
     setTitleDraft(settings.title || '家族數位族譜');
     setSubtitleDraft(settings.subtitle || '');
     setFooterTextDraft(settings.footerText || DEFAULT_FAMILY_SETTINGS.footerText || '');
+    setMobileZoomDraft(settings.mobileDefaultZoom || DEFAULT_FAMILY_SETTINGS.mobileDefaultZoom || 55);
+    setDesktopZoomDraft(settings.desktopDefaultZoom || DEFAULT_FAMILY_SETTINGS.desktopDefaultZoom || 100);
   }, [settings]);
 
   // Re-verify remembered passcode or auth session
@@ -724,16 +732,71 @@ export function App() {
     });
   };
 
-  // Auto-center whenever perspectiveId changes or when unlocked!
+  const pendingTreeTargetIdRef = useRef<MemberId | null>(null);
+
+  /**
+   * 切換回族譜模式並自動聚焦置中指定人物卡片
+   */
+  const locateMemberInTree = (targetMemberId: MemberId) => {
+    pendingTreeTargetIdRef.current = targetMemberId;
+    setSelectedId(targetMemberId);
+    setActiveTab('tree');
+    if (activeTab === 'tree') {
+      centerMemberInTree(targetMemberId);
+    }
+  };
+
+  // Auto-center whenever perspectiveId changes or when unlocked or when tab switches to tree!
   useEffect(() => {
     if (isUnlocked && activeTab === 'tree') {
-      if (perspectiveId === 'visitor') {
+      const explicitTarget = pendingTreeTargetIdRef.current;
+      pendingTreeTargetIdRef.current = null;
+      if (explicitTarget && members[explicitTarget]) {
+        centerMemberInTree(explicitTarget);
+      } else if (perspectiveId === 'visitor') {
         centerMemberInTree('pGrandpa');
       } else {
         centerMemberInTree(perspectiveId);
       }
     }
-  }, [perspectiveId, activeTab, isUnlocked]);
+  }, [perspectiveId, activeTab, isUnlocked, members]);
+
+  // Group and sort members by generation and surname for the Kinship dropdown selectors
+  const kinshipDropdownGroups = useMemo(() => {
+    const allMembers = Object.values(members);
+    const generations = Array.from(new Set(allMembers.map((m) => m.generation))).sort(
+      (a, b) => a - b
+    );
+
+    const getGenerationLabel = (gen: number) => {
+      const genNumMap: Record<number, string> = {
+        1: '第一代',
+        2: '第二代',
+        3: '第三代',
+        4: '第四代',
+        5: '第五代'
+      };
+      return genNumMap[gen] || `第 ${gen} 代`;
+    };
+
+    return generations.map((gen) => {
+      const list = allMembers
+        .filter((m) => m.generation === gen)
+        .sort((a, b) => {
+          // 姓氏排序：相同姓氏放在一起（以首字姓氏筆劃/發音排序，相同則依全名排序）
+          const surnameA = a.name.charAt(0) || '';
+          const surnameB = b.name.charAt(0) || '';
+          const surnameComp = surnameA.localeCompare(surnameB, 'zh-Hant');
+          if (surnameComp !== 0) return surnameComp;
+          return a.name.localeCompare(b.name, 'zh-Hant');
+        });
+      return {
+        generation: gen,
+        label: `==== ${getGenerationLabel(gen)} ====`,
+        members: list
+      };
+    });
+  }, [members]);
 
   // Synchronize kinshipSourceId whenever a logged-in or chosen perspective member changes
   useEffect(() => {
@@ -1064,26 +1127,35 @@ export function App() {
     showToast(`🗑️ 已自族譜移除成員「${target.name}」`);
   };
 
-  // Handlers: Save Title, Subtitle & Footer Text inside System Settings Modal
+  // Handlers: Save Title, Subtitle, Zoom & Footer Text inside System Settings Modal
   const handleSaveTitleInSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    const parsedMobileZoom = Math.min(200, Math.max(20, Number(mobileZoomDraft) || 55));
+    const parsedDesktopZoom = Math.min(200, Math.max(20, Number(desktopZoomDraft) || 100));
     const cleaned: FamilySettings = {
       ...settings,
       title: titleDraft.trim() || '家族數位族譜',
       subtitle: subtitleDraft.trim(),
-      footerText: footerTextDraft.trim() || DEFAULT_FAMILY_SETTINGS.footerText
+      footerText: footerTextDraft.trim() || DEFAULT_FAMILY_SETTINGS.footerText,
+      mobileDefaultZoom: parsedMobileZoom,
+      desktopDefaultZoom: parsedDesktopZoom
     };
     setSettings(cleaned);
+    // Apply immediate zoom update based on device width
+    if (typeof window !== 'undefined') {
+      const isMobile = window.innerWidth < 768;
+      setZoomScale((isMobile ? parsedMobileZoom : parsedDesktopZoom) / 100);
+    }
     if (firebaseConnected) {
       try {
         await saveSettingsToFirestore(cleaned);
-        showToast('✅ 網站標題與頁尾文字已更新並同步至 Firebase！');
+        showToast('✅ 網站設定（含顯示縮放尺寸）已更新並同步至 Firebase！');
       } catch (err) {
-        console.error('Failed to save title settings to Firestore:', err);
-        showToast('✅ 網站標題與頁尾文字已更新（已存於本機）');
+        console.error('Failed to save settings to Firestore:', err);
+        showToast('✅ 網站設定已更新（已存於本機）');
       }
     } else {
-      showToast('✅ 網站標題與頁尾文字已更新！');
+      showToast('✅ 網站設定已更新！');
     }
   };
 
@@ -2284,11 +2356,17 @@ export function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setZoomScale((prev) => (prev === 1 ? 0.55 : 1))}
+                onClick={() => {
+                  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+                  const defaultTarget = isMobile
+                    ? (settings.mobileDefaultZoom || 55) / 100
+                    : (settings.desktopDefaultZoom || 100) / 100;
+                  setZoomScale((prev) => (Math.abs(prev - 1) < 0.03 ? defaultTarget : 1));
+                }}
                 className="px-2 h-7 sm:h-8 rounded-lg bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-800 border border-emerald-300 font-bold text-[11px] sm:text-xs flex items-center justify-center transition cursor-pointer shadow-2xs"
-                title="切換 100% / 55%"
+                title="重設/切換縮放"
               >
-                ⛶ {zoomScale === 1 ? '55%' : '100%'}
+                ⛶ {Math.round(zoomScale * 100)}%
               </button>
             </div>
 
@@ -2667,11 +2745,7 @@ export function App() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      setActiveTab('tree');
-                      setSelectedId(personFocusId);
-                      centerMemberInTree(personFocusId);
-                    }}
+                    onClick={() => locateMemberInTree(personFocusId)}
                     className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-extrabold text-xs sm:text-sm cursor-pointer shadow-2xs"
                   >
                     🌳 在族譜定位
@@ -2892,10 +2966,17 @@ export function App() {
                     onChange={(e) => setKinshipSourceId(e.target.value)}
                     className="text-xs sm:text-sm font-black text-stone-900 bg-transparent focus:outline-none cursor-pointer pr-1"
                   >
-                    {Object.values(members).map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} {m.nickname ? `(${m.nickname})` : ''} · {m.roleLabel || ''}
-                      </option>
+                    {kinshipDropdownGroups.map((group) => (
+                      <React.Fragment key={group.generation}>
+                        <option disabled value={`group-source-${group.generation}`} className="font-extrabold text-stone-400 bg-stone-100 py-1">
+                          {group.label}
+                        </option>
+                        {group.members.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </React.Fragment>
                     ))}
                   </select>
                   <span className="text-xs font-bold text-stone-600 shrink-0">出發</span>
@@ -2909,10 +2990,17 @@ export function App() {
                     onChange={(e) => setKinshipTargetId(e.target.value)}
                     className="text-xs sm:text-sm font-black text-emerald-900 bg-transparent focus:outline-none cursor-pointer pr-1"
                   >
-                    {Object.values(members).map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} {m.nickname ? `(${m.nickname})` : ''} · {m.roleLabel || ''}
-                      </option>
+                    {kinshipDropdownGroups.map((group) => (
+                      <React.Fragment key={group.generation}>
+                        <option disabled value={`group-target-${group.generation}`} className="font-extrabold text-stone-400 bg-stone-100 py-1">
+                          {group.label}
+                        </option>
+                        {group.members.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </React.Fragment>
                     ))}
                   </select>
                 </div>
@@ -3021,11 +3109,7 @@ export function App() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setActiveTab('tree');
-                          setSelectedId(target.id);
-                          centerMemberInTree(target.id);
-                        }}
+                        onClick={() => locateMemberInTree(target.id)}
                         className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-extrabold text-xs cursor-pointer shadow-2xs"
                       >
                         🌳 族譜定位
@@ -4653,16 +4737,16 @@ export function App() {
 
             {systemSettingsTab === 'security' ? (
               <div className="space-y-5">
-                {/* Section 1: Family Tree Title, Subtitle & Footer Editing */}
+                {/* Section 1: Family Tree Title, Subtitle, Zoom & Footer Editing */}
                 <form
                   onSubmit={handleSaveTitleInSettings}
                   className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3"
                 >
                   <div className="text-base font-extrabold text-emerald-950 flex items-center justify-between">
-                    <span>1️⃣ 族譜網站標題、副標題與頁尾版權文字設定</span>
+                    <span>1️⃣ 族譜網站標題、預設顯示尺寸與頁尾文字設定</span>
                   </div>
                   <p className="text-xs text-stone-600">
-                    設定顯示於畫面最上方的族譜名稱以及最下方的頁尾文字，儲存後會即時更新並同步至所有裝置與 Firebase。
+                    設定顯示於畫面最上方的族譜名稱、手機／電腦版預設縮放尺寸（%）以及最下方的頁尾文字，儲存後會即時更新並同步至所有裝置與 Firebase。
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -4690,6 +4774,44 @@ export function App() {
                         className="w-full px-3.5 py-2 rounded-xl bg-white border border-emerald-300 font-medium text-stone-900 text-sm focus:outline-none focus:border-emerald-600"
                       />
                     </div>
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        📱 手機版預設顯示尺寸（%）
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="20"
+                          max="200"
+                          step="5"
+                          required
+                          value={mobileZoomDraft}
+                          onChange={(e) => setMobileZoomDraft(Number(e.target.value))}
+                          placeholder="55"
+                          className="w-full px-3.5 py-2 rounded-xl bg-white border border-emerald-300 font-extrabold text-stone-900 text-sm focus:outline-none focus:border-emerald-600"
+                        />
+                        <span className="text-xs font-bold text-emerald-800 shrink-0">建議 55%</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        💻 網頁／電腦版預設顯示尺寸（%）
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="20"
+                          max="200"
+                          step="5"
+                          required
+                          value={desktopZoomDraft}
+                          onChange={(e) => setDesktopZoomDraft(Number(e.target.value))}
+                          placeholder="100"
+                          className="w-full px-3.5 py-2 rounded-xl bg-white border border-emerald-300 font-extrabold text-stone-900 text-sm focus:outline-none focus:border-emerald-600"
+                        />
+                        <span className="text-xs font-bold text-emerald-800 shrink-0">建議 100%</span>
+                      </div>
+                    </div>
                     <div className="sm:col-span-2">
                       <label className="block text-xs font-bold text-stone-700 mb-1">
                         最下方頁尾版權文字 (Footer)
@@ -4708,7 +4830,7 @@ export function App() {
                       type="submit"
                       className="px-5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-sm cursor-pointer shadow-2xs"
                     >
-                      💾 儲存標題與頁尾文字
+                      💾 儲存網站設定（含縮放尺寸與頁尾）
                     </button>
                   </div>
                 </form>

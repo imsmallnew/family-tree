@@ -49,6 +49,8 @@ export interface FamilySettings {
   familyPasscode: string;       // 長輩/家族成員查看用的通行密碼 (預設 '8888')
   authorizedEmails: string[];   // 授權可編輯修改的 Gmail 白名單
   footerText?: string;          // 頁尾版權與建置者自訂文字
+  mobileDefaultZoom?: number;   // 手機版預設縮放尺寸 % (預設 55)
+  desktopDefaultZoom?: number;  // 電腦版預設縮放尺寸 % (預設 100)
 }
 
 export interface FirebaseConfigInput {
