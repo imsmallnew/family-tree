@@ -209,7 +209,12 @@ export function App() {
   // 4. State: Navigation, Lineage Branch View, Perspective, Role, Elder Font Size, Person Mode & Zoom
   const [activeTab, setActiveTab] = useState<'tree' | 'person' | 'kinship' | 'schema'>('tree');
   const [personFocusId, setPersonFocusId] = useState<MemberId>('me');
-  const [zoomScale, setZoomScale] = useState<number>(1);
+  const [zoomScale, setZoomScale] = useState<number>(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      return 0.55;
+    }
+    return 1;
+  });
   const [kinshipSearchQuery, setKinshipSearchQuery] = useState('');
   const [kinshipSourceId, setKinshipSourceId] = useState<MemberId>('me');
   const [kinshipTargetId, setKinshipTargetId] = useState<MemberId>('brother');
@@ -1366,13 +1371,33 @@ export function App() {
   // =========================================================================
   if (!isUnlocked) {
     return (
-      <div className="min-h-screen bg-stone-100 flex flex-col items-center justify-center p-3 sm:p-4">
-        <div className="bg-white border-2 border-stone-200 rounded-3xl max-w-md w-full p-5 sm:p-8 shadow-xl space-y-4 sm:space-y-6 text-center my-auto">
+      <div className="min-h-[100dvh] bg-stone-100 flex flex-col justify-between items-center p-3 sm:p-4 select-none overflow-y-auto">
+        {/* Invisible Top Balancer to guarantee true vertical centering */}
+        <div className="shrink-0 h-4 sm:h-8" aria-hidden="true" />
+
+        <div className="bg-white border-2 border-stone-200 rounded-3xl max-w-md w-full p-5 sm:p-8 shadow-xl space-y-4 sm:space-y-5 text-center my-auto shrink-0">
           <div>
-            <h1 className="font-extrabold text-2xl sm:text-3xl text-stone-900 tracking-tight">
-              {settings.title}
-            </h1>
-            <p className="text-xs sm:text-sm text-stone-600 font-medium mt-1.5 leading-relaxed">
+            <div className="flex items-center justify-center gap-2.5 mb-2">
+              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <svg
+                  className="w-6 h-6 sm:w-7 sm:h-7"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <circle cx="6.5" cy="6.5" r="2.5" />
+                  <path d="M2.5 14c0-2.2 1.8-4 4-4s4 1.8 4 4v1.5h-8V14z" />
+                  <circle cx="17.5" cy="6.5" r="2.5" />
+                  <path d="M13.5 14c0-2.2 1.8-4 4-4s4 1.8 4 4v1.5h-8V14z" />
+                  <circle cx="12" cy="13.5" r="2" />
+                  <path d="M8.5 20.5c0-1.8 1.6-3.2 3.5-3.2s3.5 1.4 3.5 3.2v1h-7v-1z" />
+                </svg>
+              </div>
+              <h1 className="font-extrabold text-2xl sm:text-3xl text-stone-900 tracking-tight">
+                {settings.title}
+              </h1>
+            </div>
+            <p className="text-xs sm:text-sm text-stone-600 font-medium mt-1 leading-relaxed">
               🔒 為保護家族成員隱私，請輸入家族通行密碼進入查閱
             </p>
           </div>
@@ -1429,6 +1454,11 @@ export function App() {
             </button>
           </div>
         </div>
+
+        {/* Footer */}
+        <footer className="text-center py-3 px-4 text-xs text-stone-500 font-medium shrink-0">
+          <p>{settings.footerText || DEFAULT_FAMILY_SETTINGS.footerText}</p>
+        </footer>
 
         {/* Prompt Modal: Ask Elder Whether to Remember Passcode */}
         {showRememberPrompt && (
@@ -1704,16 +1734,36 @@ export function App() {
       <header className="sticky top-0 z-40 bg-white border-b-2 border-stone-200 px-3 sm:px-6 py-1.5 sm:py-2 shrink-0 shadow-xs">
         {/* ROW 1: Left Title & Right Font Size + Welcome + Logout (Parallel with Title) */}
         <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-2">
-          {/* Left: Title & Subtitle (已移除代表字「族」，直接顯示標題) */}
-          <div className="min-w-0">
-            <h1 className="font-extrabold text-base sm:text-xl text-stone-900 tracking-tight leading-tight truncate">
-              {settings.title}
-            </h1>
-            {settings.subtitle && (
-              <p className="text-[11px] text-stone-500 font-medium leading-tight mt-0.5 truncate hidden sm:block">
-                {settings.subtitle}
-              </p>
-            )}
+          {/* Left: Logo & Title & Subtitle */}
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+            <div
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-xs"
+              title="郭林家族族譜"
+            >
+              <svg
+                className="w-5 h-5 sm:w-5.5 sm:h-5.5"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <circle cx="6.5" cy="6.5" r="2.5" />
+                <path d="M2.5 14c0-2.2 1.8-4 4-4s4 1.8 4 4v1.5h-8V14z" />
+                <circle cx="17.5" cy="6.5" r="2.5" />
+                <path d="M13.5 14c0-2.2 1.8-4 4-4s4 1.8 4 4v1.5h-8V14z" />
+                <circle cx="12" cy="13.5" r="2" />
+                <path d="M8.5 20.5c0-1.8 1.6-3.2 3.5-3.2s3.5 1.4 3.5 3.2v1h-7v-1z" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <h1 className="font-extrabold text-base sm:text-xl text-stone-900 tracking-tight leading-tight truncate">
+                {settings.title}
+              </h1>
+              {settings.subtitle && (
+                <p className="text-[11px] text-stone-500 font-medium leading-tight mt-0.5 truncate hidden sm:block">
+                  {settings.subtitle}
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Right (Row 1): Font Size -> Welcome Name -> System Settings (Admin) -> Logout */}
@@ -2184,7 +2234,7 @@ export function App() {
             <div className="absolute top-2.5 left-2.5 z-30 flex items-center gap-1 bg-white/95 backdrop-blur-md px-2 py-1 rounded-xl border border-stone-300 shadow-md pointer-events-auto">
               <button
                 type="button"
-                onClick={() => setZoomScale((s) => Math.max(0.4, Number((s - 0.15).toFixed(2))))}
+                onClick={() => setZoomScale((s) => Math.max(0.3, Number((s - 0.1).toFixed(2))))}
                 className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-stone-100 hover:bg-stone-200 active:scale-95 text-stone-800 font-extrabold text-sm sm:text-base flex items-center justify-center transition cursor-pointer shadow-2xs"
                 title="縮小族譜"
               >
@@ -2195,7 +2245,7 @@ export function App() {
               </span>
               <button
                 type="button"
-                onClick={() => setZoomScale((s) => Math.min(1.8, Number((s + 0.15).toFixed(2))))}
+                onClick={() => setZoomScale((s) => Math.min(1.8, Number((s + 0.1).toFixed(2))))}
                 className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-stone-100 hover:bg-stone-200 active:scale-95 text-stone-800 font-extrabold text-sm sm:text-base flex items-center justify-center transition cursor-pointer shadow-2xs"
                 title="放大族譜"
               >
@@ -2203,11 +2253,11 @@ export function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setZoomScale(1)}
+                onClick={() => setZoomScale((prev) => (prev === 1 ? 0.55 : 1))}
                 className="px-2 h-7 sm:h-8 rounded-lg bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-800 border border-emerald-300 font-bold text-[11px] sm:text-xs flex items-center justify-center transition cursor-pointer shadow-2xs"
-                title="重設縮放 100%"
+                title="切換 100% / 55%"
               >
-                ⛶ 100%
+                ⛶ {zoomScale === 1 ? '55%' : '100%'}
               </button>
             </div>
 
