@@ -236,7 +236,8 @@ export function subscribeToFamilyData(
           familyPasscode: data.familyPasscode || DEFAULT_FAMILY_SETTINGS.familyPasscode,
           authorizedEmails: Array.isArray(data.authorizedEmails)
             ? data.authorizedEmails.map((e) => e.toLowerCase())
-            : DEFAULT_FAMILY_SETTINGS.authorizedEmails
+            : DEFAULT_FAMILY_SETTINGS.authorizedEmails,
+          footerText: data.footerText || DEFAULT_FAMILY_SETTINGS.footerText
         });
       }
     },

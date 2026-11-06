@@ -140,6 +140,9 @@ export function App() {
   });
   const [titleDraft, setTitleDraft] = useState(settings.title || '家族數位族譜');
   const [subtitleDraft, setSubtitleDraft] = useState(settings.subtitle || '');
+  const [footerTextDraft, setFooterTextDraft] = useState(
+    settings.footerText || DEFAULT_FAMILY_SETTINGS.footerText || ''
+  );
 
   // 2. State: Entry Gate Authentication (Passcode + Remember Prompt + Google Gmail Auth)
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
@@ -256,6 +259,7 @@ export function App() {
     name: '',
     nickname: '',
     email: '',
+    phone: '',
     roleLabel: '',
     gender: 'M' as 'M' | 'F',
     birthday: '1995-01-01',
@@ -343,6 +347,7 @@ export function App() {
     setPasscodeDraft(settings.familyPasscode || '8888');
     setTitleDraft(settings.title || '家族數位族譜');
     setSubtitleDraft(settings.subtitle || '');
+    setFooterTextDraft(settings.footerText || DEFAULT_FAMILY_SETTINGS.footerText || '');
   }, [settings]);
 
   // Re-verify remembered passcode or auth session
@@ -459,6 +464,7 @@ export function App() {
     setPerspectiveId('visitor');
     setShowRememberPrompt(false);
     setIsUnlocked(true);
+    setTimeout(() => centerMemberInTree('pGrandpa'), 200);
   };
 
   // Handlers: Google Gmail Admin Login (Strictly Whitelist Only!)
@@ -703,7 +709,11 @@ export function App() {
   // Auto-center whenever perspectiveId changes or when unlocked!
   useEffect(() => {
     if (isUnlocked && activeTab === 'tree') {
-      centerMemberInTree(perspectiveId);
+      if (perspectiveId === 'visitor') {
+        centerMemberInTree('pGrandpa');
+      } else {
+        centerMemberInTree(perspectiveId);
+      }
     }
   }, [perspectiveId, activeTab, isUnlocked]);
 
@@ -814,6 +824,7 @@ export function App() {
       name: '',
       nickname: '',
       email: '',
+      phone: '',
       roleLabel: defaultRoleLabel,
       gender: defaultGender,
       birthday: `${defaultBirthYear}-06-15`,
@@ -887,6 +898,7 @@ export function App() {
       name: newMemberDraft.name.trim(),
       nickname: newMemberDraft.nickname.trim(),
       email: newMemberDraft.email.trim().toLowerCase(),
+      phone: newMemberDraft.phone.trim(),
       gender: newMemberDraft.gender,
       generation,
       birthOrder: Object.keys(members).length + 1,
@@ -976,25 +988,26 @@ export function App() {
     showToast(`🗑️ 已自族譜移除成員「${target.name}」`);
   };
 
-  // Handlers: Save Title & Subtitle inside System Settings Modal
+  // Handlers: Save Title, Subtitle & Footer Text inside System Settings Modal
   const handleSaveTitleInSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleaned: FamilySettings = {
       ...settings,
       title: titleDraft.trim() || '家族數位族譜',
-      subtitle: subtitleDraft.trim()
+      subtitle: subtitleDraft.trim(),
+      footerText: footerTextDraft.trim() || DEFAULT_FAMILY_SETTINGS.footerText
     };
     setSettings(cleaned);
     if (firebaseConnected) {
       try {
         await saveSettingsToFirestore(cleaned);
-        showToast('✅ 族譜標題已更新並同步至 Firebase！');
+        showToast('✅ 網站標題與頁尾文字已更新並同步至 Firebase！');
       } catch (err) {
         console.error('Failed to save title settings to Firestore:', err);
-        showToast('✅ 族譜標題已更新（已存於本機）');
+        showToast('✅ 網站標題與頁尾文字已更新（已存於本機）');
       }
     } else {
-      showToast('✅ 族譜標題已更新！');
+      showToast('✅ 網站標題與頁尾文字已更新！');
     }
   };
 
@@ -1013,6 +1026,7 @@ export function App() {
       ...formData,
       nickname: (formData.nickname || '').trim(),
       email: (formData.email || '').trim().toLowerCase(),
+      phone: (formData.phone || '').trim(),
       passingDate: formData.isAlive ? '' : formData.passingDate || '',
       lunarBirthday: autoLunar ? autoLunar.monthDay : formData.lunarBirthday
     };
@@ -1571,12 +1585,11 @@ export function App() {
             <div className="text-[11px] md:text-xs font-extrabold text-pink-800 bg-white px-2.5 py-0.5 rounded-full border border-pink-300 mb-1.5 md:mb-2 shadow-2xs flex items-center gap-1">
               <span>💞 夫妻家庭框（{primary.name} ＆ {spouse.name}）</span>
             </div>
-            <div className="flex flex-col md:flex-row items-center gap-1.5 md:gap-3">
+            <div className="flex flex-row items-center gap-2 sm:gap-3">
               {renderNodeCard(primary.id, { label: '🏠 本家血親', isSpouse: false })}
-              <div className="flex md:flex-col items-center shrink-0 py-0.5 md:py-0 md:px-1 gap-1">
-                <span className="text-[10px] md:text-xs text-pink-600 font-extrabold">❤️ 配偶</span>
-                <div className="hidden md:block w-7 spouse-line"></div>
-                <div className="md:hidden h-2.5 w-0.5 bg-pink-400"></div>
+              <div className="flex flex-col items-center shrink-0 px-0.5 sm:px-1 gap-0.5">
+                <span className="text-[10px] sm:text-xs text-pink-600 font-extrabold">❤️ 配偶</span>
+                <div className="w-5 sm:w-7 spouse-line"></div>
               </div>
               {renderNodeCard(spouse.id, { label: '💍 配偶伴侶', isSpouse: true })}
             </div>
@@ -1596,7 +1609,7 @@ export function App() {
             <div className="text-[11px] md:text-xs font-extrabold text-emerald-900 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-300 mb-1.5 md:mb-2">
               ↓ {primary.name}{spouse ? `與${spouse.name}` : ''}的子女（第 {primary.generation + 1} 代 · 共 {childrenIds.length} 人）
             </div>
-            <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-3 md:gap-6 pt-2 border-t-3 border-stone-300 px-1 md:px-4">
+            <div className="flex flex-row items-start justify-center gap-4 sm:gap-6 pt-2 border-t-3 border-stone-300 px-2 sm:px-4">
               {childrenIds.map((cid) => renderFamilyUnit(cid, depth + 1))}
             </div>
           </div>
@@ -1630,53 +1643,49 @@ export function App() {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-stone-100 text-stone-900 overflow-hidden select-none">
-      {/* Fixed 2-Row Top Navigation & Elder-Friendly Control Bar (佔比約 1/5) */}
+      {/* Fixed 3-Row Top Navigation & Elder-Friendly Control Bar */}
       <header className="sticky top-0 z-40 bg-white border-b-2 border-stone-200 px-3 sm:px-6 py-2 shrink-0 shadow-xs">
         {/* ROW 1: Left Title & Right Font Size + Welcome + Logout (Parallel with Title) */}
         <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-2">
-          {/* Left: Title & Emblem (代表字直接顯示，編輯標題統一於系統設定操作) */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-extrabold text-base sm:text-xl shadow-xs shrink-0 select-none">
-              {settings.logoText || '族'}
-            </div>
-
-            <div className="min-w-0">
-              <h1 className="font-extrabold text-base sm:text-xl text-stone-900 tracking-tight leading-tight truncate">
-                {settings.title}
-              </h1>
-              {settings.subtitle && (
-                <p className="text-[11px] text-stone-500 font-medium leading-tight mt-0.5 truncate hidden sm:block">
-                  {settings.subtitle}
-                </p>
-              )}
-            </div>
+          {/* Left: Title & Subtitle (已移除最左邊的「族」代表字，統一由系統設定編輯) */}
+          <div className="min-w-0">
+            <h1 className="font-extrabold text-base sm:text-xl text-stone-900 tracking-tight leading-tight truncate">
+              {settings.title}
+            </h1>
+            {settings.subtitle && (
+              <p className="text-[11px] text-stone-500 font-medium leading-tight mt-0.5 truncate hidden sm:block">
+                {settings.subtitle}
+              </p>
+            )}
           </div>
 
           {/* Right (Row 1): Font Size -> Welcome Name -> System Settings (Admin) -> Logout */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Font Size Switcher */}
+            {/* Font Size Switcher: 標準 (16px) / 大字 (21px 長輩特大) */}
             <div className="flex items-center bg-stone-100 border border-stone-300 rounded-lg p-0.5 text-[11px] sm:text-[12px]">
               <span className="text-stone-600 font-bold px-1 hidden md:inline">🔍 字體：</span>
-              {(
-                [
-                  { id: 'normal', label: '標準' },
-                  { id: 'large', label: '大字' },
-                  { id: 'xlarge', label: '特大' }
-                ] as const
-              ).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setFontScale(item.id)}
-                  className={`px-1.5 sm:px-2 py-0.5 rounded-md text-[11px] sm:text-[12px] font-bold transition cursor-pointer ${
-                    fontScale === item.id
-                      ? 'bg-emerald-600 text-white shadow-2xs'
-                      : 'text-stone-700 hover:bg-stone-200'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
+              <button
+                type="button"
+                onClick={() => setFontScale('normal')}
+                className={`px-2 py-0.5 rounded-md text-[11px] sm:text-[12px] font-bold transition cursor-pointer ${
+                  fontScale === 'normal'
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
+              >
+                標準
+              </button>
+              <button
+                type="button"
+                onClick={() => setFontScale('xlarge')}
+                className={`px-2 py-0.5 rounded-md text-[11px] sm:text-[12px] font-bold transition cursor-pointer ${
+                  fontScale !== 'normal'
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
+              >
+                大字
+              </button>
             </div>
 
             {/* Greeting for Gmail-authenticated family member (hidden on small mobile) */}
@@ -1713,10 +1722,50 @@ export function App() {
           </div>
         </div>
 
-        {/* ROW 2: Mobile scrollable horizontal bar for clean 1-line display */}
+        {/* ROW 2: 3-Mode Switcher: 🌳 族譜模式 / 👤 人物模式 / 🔎 稱謂模式 */}
+        <div className="max-w-[1600px] mx-auto mt-1.5 pt-1.5 border-t border-stone-200 flex items-center justify-center gap-1.5 sm:gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('tree')}
+            className={`flex-1 sm:flex-initial text-center px-3 sm:px-4 py-1.5 rounded-xl text-xs sm:text-sm font-extrabold transition cursor-pointer flex items-center justify-center gap-1.5 ${
+              activeTab === 'tree'
+                ? 'bg-emerald-700 text-white shadow-xs'
+                : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-200'
+            }`}
+          >
+            <span>🌳 族譜模式</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('person');
+              setPersonFocusId(selectedId || 'me');
+            }}
+            className={`flex-1 sm:flex-initial text-center px-3 sm:px-4 py-1.5 rounded-xl text-xs sm:text-sm font-extrabold transition cursor-pointer flex items-center justify-center gap-1.5 ${
+              activeTab === 'person'
+                ? 'bg-emerald-700 text-white shadow-xs'
+                : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-200'
+            }`}
+          >
+            <span>👤 人物模式</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('kinship')}
+            className={`flex-1 sm:flex-initial text-center px-3 sm:px-4 py-1.5 rounded-xl text-xs sm:text-sm font-extrabold transition cursor-pointer flex items-center justify-center gap-1.5 ${
+              activeTab === 'kinship'
+                ? 'bg-emerald-700 text-white shadow-xs'
+                : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-200'
+            }`}
+          >
+            <span>🔎 稱謂模式</span>
+          </button>
+        </div>
+
+        {/* ROW 3: Perspective + Edit + Quick Add (Left) & Branch Switcher (Right) */}
         <div className="max-w-[1600px] mx-auto mt-1.5 pt-1.5 border-t border-stone-200 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* 1. Perspective Selector & Center Button */}
+            {/* Perspective Selector & Center Button */}
             <div className="flex items-center gap-1 bg-emerald-50 border border-emerald-300 rounded-lg px-2 py-1 shrink-0">
               <span className="text-[11px] sm:text-xs text-emerald-900 font-bold shrink-0">👀 視角:</span>
               <select
@@ -1724,12 +1773,14 @@ export function App() {
                 onChange={(e) => {
                   const nextId = e.target.value;
                   setPerspectiveId(nextId);
-                  if (nextId !== 'visitor' && members[nextId]) {
+                  if (nextId === 'visitor') {
+                    centerMemberInTree('pGrandpa');
+                  } else if (members[nextId]) {
                     setSelectedId(nextId);
                     centerMemberInTree(nextId);
                   }
                 }}
-                className="bg-transparent text-xs sm:text-sm font-extrabold text-emerald-800 focus:outline-none cursor-pointer max-w-[90px] sm:max-w-none truncate"
+                className="bg-transparent text-xs sm:text-sm font-extrabold text-emerald-800 focus:outline-none cursor-pointer max-w-[100px] sm:max-w-none truncate"
               >
                 <option value="visitor">訪客</option>
                 {Object.values(members).map((m) => (
@@ -1739,18 +1790,17 @@ export function App() {
                   </option>
                 ))}
               </select>
-              {!isVisitorPerspective && (
-                <button
-                  type="button"
-                  onClick={() => centerMemberInTree(perspectiveId)}
-                  className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white font-bold transition cursor-pointer shrink-0"
-                >
-                  🎯
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => centerMemberInTree(perspectiveId === 'visitor' ? 'pGrandpa' : perspectiveId)}
+                className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white font-bold transition cursor-pointer shrink-0"
+                title="在族譜置中目前視角"
+              >
+                🎯
+              </button>
             </div>
 
-            {/* 2. Edit Selected Member + Quick Add Dropdown */}
+            {/* Edit Selected Member + Quick Add Dropdown */}
             {canEdit && (
               <div className="flex items-center gap-1 shrink-0 relative">
                 <button
@@ -1818,49 +1868,9 @@ export function App() {
                 </div>
               </div>
             )}
-
-            {/* 3. Navigation Mode Switcher: 🌳 族譜模式 / 👤 人物模式 / 🔎 稱謂模式 */}
-            <div className="flex items-center bg-stone-100 p-0.5 rounded-lg border border-stone-300 text-xs">
-              <button
-                type="button"
-                onClick={() => setActiveTab('tree')}
-                className={`px-2.5 py-1 rounded-md text-xs sm:text-sm font-bold transition cursor-pointer flex items-center gap-1 shrink-0 ${
-                  activeTab === 'tree'
-                    ? 'bg-emerald-700 text-white shadow-xs'
-                    : 'text-stone-700 hover:bg-stone-200'
-                }`}
-              >
-                <span>🌳 族譜模式</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('person');
-                  setPersonFocusId(selectedId || 'me');
-                }}
-                className={`px-2.5 py-1 rounded-md text-xs sm:text-sm font-bold transition cursor-pointer flex items-center gap-1 shrink-0 ${
-                  activeTab === 'person'
-                    ? 'bg-emerald-700 text-white shadow-xs'
-                    : 'text-stone-700 hover:bg-stone-200'
-                }`}
-              >
-                <span>👤 人物模式</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('kinship')}
-                className={`px-2.5 py-1 rounded-md text-xs sm:text-sm font-bold transition cursor-pointer flex items-center gap-1 shrink-0 ${
-                  activeTab === 'kinship'
-                    ? 'bg-emerald-700 text-white shadow-xs'
-                    : 'text-stone-700 hover:bg-stone-200'
-                }`}
-              >
-                <span>🔎 稱謂模式</span>
-              </button>
-            </div>
           </div>
 
-          {/* Right side: Generation Branch switcher */}
+          {/* Right side: Generation Branch switcher (總覽 / 父系 / 母系) */}
           {activeTab === 'tree' && (
             <div className="flex items-center gap-1 bg-stone-100 p-0.5 rounded-lg border border-stone-300 text-[11px] shrink-0">
               <button
@@ -1971,7 +1981,7 @@ export function App() {
               {/* ================= GENERATION 1 ================= */}
               {branchView === 'both' && (
                 <div className="flex flex-col items-center">
-                  <div className="flex flex-col md:flex-row items-center md:items-stretch justify-center gap-6 md:gap-12">
+                  <div className="flex flex-row items-stretch justify-center gap-8 md:gap-12">
                     <div className="bg-sky-50/70 border-2 border-sky-300 rounded-3xl p-3 sm:p-4 flex flex-col items-center shrink-0 shadow-xs">
                       <div className="flex items-center justify-between gap-3 w-full mb-3 px-2">
                         <span className="text-xs sm:text-sm font-extrabold text-sky-900 px-3 py-1 rounded-full bg-white border border-sky-300">
@@ -1990,7 +2000,7 @@ export function App() {
                           </button>
                         )}
                       </div>
-                      <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-5">
+                      <div className="flex flex-row items-start justify-center gap-4 sm:gap-5">
                         {paternalGen1Ids.map((id) => renderFamilyUnit(id, 99))}
                       </div>
                     </div>
@@ -2013,13 +2023,13 @@ export function App() {
                           </button>
                         )}
                       </div>
-                      <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-5">
+                      <div className="flex flex-row items-start justify-center gap-4 sm:gap-5">
                         {maternalGen1Ids.map((id) => renderFamilyUnit(id, 99))}
                       </div>
                     </div>
                   </div>
 
-                  <div className="w-full max-w-[560px] flex flex-col md:flex-row items-center md:justify-between px-4 md:px-14 mt-1 gap-2 md:gap-0">
+                  <div className="w-full max-w-[560px] flex flex-row items-center justify-between px-8 sm:px-14 mt-1">
                     <div className="flex flex-col items-center">
                       <div className="h-5 border-l-3 border-sky-500"></div>
                       <span className="text-xs font-extrabold text-sky-800 bg-sky-100 px-3 py-0.5 rounded-full border border-sky-300">
@@ -2058,7 +2068,7 @@ export function App() {
                         </button>
                       )}
                     </div>
-                    <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-6">
+                    <div className="flex flex-row items-start justify-center gap-4 sm:gap-6">
                       {paternalGen1Ids.map((id) => renderFamilyUnit(id, 99))}
                     </div>
                   </div>
@@ -2086,7 +2096,7 @@ export function App() {
                         </button>
                       )}
                     </div>
-                    <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-6">
+                    <div className="flex flex-row items-start justify-center gap-4 sm:gap-6">
                       {maternalGen1Ids.map((id) => renderFamilyUnit(id, 99))}
                     </div>
                   </div>
@@ -2126,7 +2136,7 @@ export function App() {
                   )}
                 </div>
 
-                <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-8">
+                <div className="flex flex-row items-start justify-center gap-4 sm:gap-8">
                   {branchView !== 'maternal' &&
                     fatherSiblings.map((sibId) => renderFamilyUnit(sibId, 0))}
 
@@ -2135,12 +2145,11 @@ export function App() {
                       <div className="text-xs font-extrabold text-pink-800 bg-white px-3.5 py-0.5 rounded-full border border-pink-300 mb-2.5 shadow-2xs">
                         💞 第二代核心夫妻（{members.father?.name} ＆ {members.mother?.name}）
                       </div>
-                      <div className="flex flex-col md:flex-row items-center justify-center gap-1.5 md:gap-3">
+                      <div className="flex flex-row items-center justify-center gap-2 sm:gap-3">
                         {renderNodeCard('father', { label: '🟦 父系代表 (爸爸)', isSpouse: false })}
-                        <div className="flex md:flex-col items-center px-1">
-                          <span className="text-[10px] md:text-xs text-pink-600 font-extrabold md:mb-1">❤️ 配偶</span>
-                          <div className="hidden md:block w-8 spouse-line"></div>
-                          <div className="md:hidden h-2.5 w-0.5 bg-pink-400"></div>
+                        <div className="flex flex-col items-center px-1">
+                          <span className="text-[10px] sm:text-xs text-pink-600 font-extrabold mb-0.5">❤️ 配偶</span>
+                          <div className="w-6 sm:w-8 spouse-line"></div>
                         </div>
                         {renderNodeCard('mother', { label: '🟧 母系代表 (媽媽)', isSpouse: true })}
                       </div>
@@ -2168,7 +2177,7 @@ export function App() {
                         )}
                       </div>
 
-                      <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-8 pt-4 border-t-3 border-stone-300 px-2 md:px-6">
+                      <div className="flex flex-row items-start justify-center gap-4 sm:gap-8 pt-4 border-t-3 border-stone-300 px-3 sm:px-6">
                         {gen3CoreIds.map((id) => renderFamilyUnit(id, 0))}
                       </div>
                     </div>
@@ -2755,6 +2764,13 @@ export function App() {
         )}
       </main>
 
+      {/* Footer (可於系統設定修改並同步至 Firebase) */}
+      <footer className="bg-white/95 border-t border-stone-200 py-1.5 px-3 text-center shrink-0 shadow-2xs">
+        <p className="text-[11px] sm:text-xs text-stone-500 font-medium tracking-wide">
+          {settings.footerText || DEFAULT_FAMILY_SETTINGS.footerText}
+        </p>
+      </footer>
+
       {/* ===================================================================== */}
       {/* POPUP 1: Member Detail View Modal (Enlarged Photo + Click Edit to Open Drawer) */}
       {/* ===================================================================== */}
@@ -2861,6 +2877,21 @@ export function App() {
                     <div className="text-xs font-bold text-stone-500">📍 居住縣市</div>
                     <div className="font-extrabold text-stone-900 mt-0.5">
                       {selectedMember.city}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-stone-500">📞 聯絡電話</div>
+                    <div className="font-extrabold text-stone-900 mt-0.5">
+                      {selectedMember.phone ? (
+                        <a
+                          href={`tel:${selectedMember.phone}`}
+                          className="text-emerald-700 hover:text-emerald-800 hover:underline"
+                        >
+                          {selectedMember.phone}
+                        </a>
+                      ) : (
+                        <span className="text-stone-400 font-normal">(未填寫)</span>
+                      )}
                     </div>
                   </div>
                   <div>
@@ -3321,21 +3352,21 @@ export function App() {
                 </div>
               </div>
 
-              {/* Row 5: Photo Upload with Crop + LINE + Facebook (RWD 1 -> 3 columns) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Row 5: Photo Upload with Crop + Phone + LINE + Facebook (RWD 1 -> 2 -> 4 columns) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-stone-700 font-bold mb-1.5 text-sm">
-                    📷 個人照片（支援選取範圍裁切）
+                    📷 個人照片
                   </label>
                   <div className="flex items-center gap-2">
                     <label
-                      className={`flex-1 px-3 py-2.5 rounded-xl bg-emerald-50/70 border-2 border-dashed border-emerald-400 flex items-center justify-center transition font-extrabold text-sm ${
+                      className={`flex-1 px-3 py-2.5 rounded-xl bg-emerald-50/70 border-2 border-dashed border-emerald-400 flex items-center justify-center transition font-extrabold text-xs sm:text-sm ${
                         canEdit
                           ? 'cursor-pointer hover:bg-emerald-100 text-emerald-800'
                           : 'opacity-50 cursor-not-allowed text-stone-400'
                       }`}
                     >
-                      <span>{isUploading ? '處理中...' : '📷 選擇照片並裁切'}</span>
+                      <span>{isUploading ? '處理中...' : '📷 選擇照片'}</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -3348,13 +3379,26 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => openCropModalWithDataUrl(formData.photoUrl!)}
-                        className="px-3 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 font-bold text-xs shrink-0 cursor-pointer"
+                        className="px-2.5 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 font-bold text-xs shrink-0 cursor-pointer"
                         title="重新調整裁切目前照片"
                       >
-                        ✂️ 裁切目前照片
+                        ✂️
                       </button>
                     )}
                   </div>
+                </div>
+                <div>
+                  <label className="block text-stone-700 font-bold mb-1.5 text-sm">
+                    📞 聯絡電話
+                  </label>
+                  <input
+                    type="tel"
+                    disabled={!canEdit}
+                    placeholder="例：0912-345-678"
+                    value={formData.phone || ''}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-medium text-stone-900 focus:outline-none focus:border-emerald-600 disabled:opacity-60"
+                  />
                 </div>
                 <div>
                   <label className="block text-stone-700 font-bold mb-1.5 text-sm">
@@ -3369,7 +3413,7 @@ export function App() {
                     className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-medium text-stone-900 focus:outline-none focus:border-emerald-600 disabled:opacity-60"
                   />
                 </div>
-                <div className="sm:col-span-2 lg:col-span-1">
+                <div>
                   <label className="block text-stone-700 font-bold mb-1.5 text-sm">
                     📘 Facebook
                   </label>
@@ -3939,15 +3983,15 @@ export function App() {
                 </div>
               </div>
 
-              {/* Row 5: Photo Upload with Crop + LINE + Facebook (RWD 1 -> 3 columns) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Row 5: Photo Upload with Crop + Phone + LINE + Facebook (RWD 1 -> 2 -> 4 columns) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-stone-700 font-bold mb-1.5 text-sm">
-                    📷 個人照片（支援選取範圍裁切）
+                    📷 個人照片
                   </label>
                   <div className="flex items-center gap-2">
-                    <label className="flex-1 px-3 py-2.5 rounded-xl bg-emerald-50/70 border-2 border-dashed border-emerald-400 flex items-center justify-center transition font-extrabold text-sm cursor-pointer hover:bg-emerald-100 text-emerald-800">
-                      <span>{isUploading ? '處理中...' : '📷 選擇照片並裁切'}</span>
+                    <label className="flex-1 px-3 py-2.5 rounded-xl bg-emerald-50/70 border-2 border-dashed border-emerald-400 flex items-center justify-center transition font-extrabold text-xs sm:text-sm cursor-pointer hover:bg-emerald-100 text-emerald-800">
+                      <span>{isUploading ? '處理中...' : '📷 選擇照片'}</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -3960,13 +4004,27 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => openCropModalWithDataUrl(newMemberDraft.photoUrl)}
-                        className="px-3 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 font-bold text-xs shrink-0 cursor-pointer"
+                        className="px-2.5 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 font-bold text-xs shrink-0 cursor-pointer"
                         title="重新調整裁切目前照片"
                       >
-                        ✂️ 裁切目前照片
+                        ✂️
                       </button>
                     )}
                   </div>
+                </div>
+                <div>
+                  <label className="block text-stone-700 font-bold mb-1.5 text-sm">
+                    📞 聯絡電話
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="例：0912-345-678"
+                    value={newMemberDraft.phone}
+                    onChange={(e) =>
+                      setNewMemberDraft({ ...newMemberDraft, phone: e.target.value })
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-medium text-stone-900 focus:outline-none focus:border-emerald-600"
+                  />
                 </div>
                 <div>
                   <label className="block text-stone-700 font-bold mb-1.5 text-sm">
@@ -3982,7 +4040,7 @@ export function App() {
                     className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-medium text-stone-900 focus:outline-none focus:border-emerald-600"
                   />
                 </div>
-                <div className="sm:col-span-2 lg:col-span-1">
+                <div>
                   <label className="block text-stone-700 font-bold mb-1.5 text-sm">
                     📘 Facebook
                   </label>
@@ -4099,16 +4157,16 @@ export function App() {
 
             {systemSettingsTab === 'security' ? (
               <div className="space-y-5">
-                {/* Section 1: Family Tree Title & Subtitle Editing */}
+                {/* Section 1: Family Tree Title, Subtitle & Footer Editing */}
                 <form
                   onSubmit={handleSaveTitleInSettings}
                   className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3"
                 >
                   <div className="text-base font-extrabold text-emerald-950 flex items-center justify-between">
-                    <span>1️⃣ 族譜網站標題與副標題設定</span>
+                    <span>1️⃣ 族譜網站標題、副標題與頁尾版權文字設定</span>
                   </div>
                   <p className="text-xs text-stone-600">
-                    設定顯示於畫面最上方的族譜名稱，儲存後會即時更新並同步至所有裝置。
+                    設定顯示於畫面最上方的族譜名稱以及最下方的頁尾文字，儲存後會即時更新並同步至所有裝置與 Firebase。
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -4136,13 +4194,25 @@ export function App() {
                         className="w-full px-3.5 py-2 rounded-xl bg-white border border-emerald-300 font-medium text-stone-900 text-sm focus:outline-none focus:border-emerald-600"
                       />
                     </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        最下方頁尾版權文字 (Footer)
+                      </label>
+                      <input
+                        type="text"
+                        value={footerTextDraft}
+                        onChange={(e) => setFooterTextDraft(e.target.value)}
+                        placeholder="例：此網站由 Daniel Kuo 建置 	© 2026 All Rights Reserved."
+                        className="w-full px-3.5 py-2 rounded-xl bg-white border border-emerald-300 font-medium text-stone-900 text-sm focus:outline-none focus:border-emerald-600"
+                      />
+                    </div>
                   </div>
                   <div className="flex justify-end pt-1">
                     <button
                       type="submit"
                       className="px-5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-sm cursor-pointer shadow-2xs"
                     >
-                      💾 儲存族譜標題
+                      💾 儲存標題與頁尾文字
                     </button>
                   </div>
                 </form>

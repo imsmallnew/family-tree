@@ -11,6 +11,7 @@ export interface Member {
   name: string;
   nickname?: string; // 英文名 / 稱呼 / 小名 (例：Daniel / 天福 / 小滿)
   email?: string;    // 成員個人 Gmail (登入時自動識別本人視角並置中，且顯示歡迎詞)
+  phone?: string;    // 聯絡電話 (僅於點選人物後彈窗顯示，族譜中不顯示)
   gender: 'M' | 'F';
   generation: number;
   birthOrder: number;
@@ -47,6 +48,7 @@ export interface FamilySettings {
   subtitle: string;
   familyPasscode: string;       // 長輩/家族成員查看用的通行密碼 (預設 '8888')
   authorizedEmails: string[];   // 授權可編輯修改的 Gmail 白名單
+  footerText?: string;          // 頁尾版權與建置者自訂文字
 }
 
 export interface FirebaseConfigInput {

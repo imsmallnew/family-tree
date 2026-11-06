@@ -37,7 +37,8 @@ export const DEFAULT_FAMILY_SETTINGS: FamilySettings = {
     'xjaokai@gmail.com',
     'alicekuo0124@gmail.com',
     'angelakuo0611@gmail.com'
-  ]
+  ],
+  footerText: '此網站由 Daniel Kuo 建置 \t© 2026 All Rights Reserved.'
 };
 
 export const INITIAL_MEMBERS: Record<MemberId, Member> = {
