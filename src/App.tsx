@@ -54,6 +54,9 @@ const LOCAL_REMEMBERED_PASSCODE_KEY = 'family_tree_remembered_passcode_v1';
 const LOCAL_AUTH_SESSION_KEY = 'family_tree_auth_session_v1';
 const LOCAL_USER_ROLE_KEY = 'family_tree_user_role_v1';
 
+// 核心樹狀圖骨幹錨點（保留作為代數結構基底，其餘成員均可自由刪除與新增）
+const PROTECTED_CORE_IDS = new Set<MemberId>(['me', 'father', 'mother', 'pGrandpa', 'grandpa']);
+
 const AVATAR_COLORS = [
   'bg-emerald-600',
   'bg-sky-600',
@@ -135,8 +138,8 @@ export function App() {
       return DEFAULT_FAMILY_SETTINGS;
     }
   });
-  const [isEditingHeader, setIsEditingHeader] = useState(false);
-  const [headerDraft, setHeaderDraft] = useState<FamilySettings>(settings);
+  const [titleDraft, setTitleDraft] = useState(settings.title || '家族數位族譜');
+  const [subtitleDraft, setSubtitleDraft] = useState(settings.subtitle || '');
 
   // 2. State: Entry Gate Authentication (Passcode + Remember Prompt + Google Gmail Auth)
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
@@ -338,6 +341,8 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(settings));
     setPasscodeDraft(settings.familyPasscode || '8888');
+    setTitleDraft(settings.title || '家族數位族譜');
+    setSubtitleDraft(settings.subtitle || '');
   }, [settings]);
 
   // Re-verify remembered passcode or auth session
@@ -934,16 +939,16 @@ export function App() {
     showToast(`🎉 已成功新增「${createdMember.name}」至第 ${generation} 代！`);
   };
 
-  // Handlers: Delete custom added member
+  // Handlers: Delete member (Allows deleting all members except 5 structural anchors)
   const handleDeleteMember = async (memberId: MemberId) => {
     if (!canEdit) return;
-    if (INITIAL_MEMBERS[memberId]) {
-      showToast('⚠️ 預設核心成員不可刪除（可直接修改他的姓名與資料）');
+    if (PROTECTED_CORE_IDS.has(memberId)) {
+      showToast('⚠️ 核心骨幹長輩成員不可刪除（可直接編輯他的姓名與個人資料）');
       return;
     }
     const target = members[memberId];
     if (!target) return;
-    if (!window.confirm(`確定要從族譜中刪除「${target.name}」嗎？`)) return;
+    if (!window.confirm(`確定要從族譜中刪除「${target.name}」嗎？其相關的親屬連結也將一併移除。`)) return;
 
     const nextMembers = { ...members };
     delete nextMembers[memberId];
@@ -956,6 +961,7 @@ export function App() {
     setIsDetailModalOpen(false);
     setIsEditorDrawerOpen(false);
     setSelectedId('me');
+    setPersonFocusId('me');
     if (perspectiveId === memberId) {
       setPerspectiveId('visitor');
     }
@@ -967,34 +973,29 @@ export function App() {
         console.error('Delete member error:', err);
       }
     }
-    showToast(`🗑️ 已移除成員「${target.name}」`);
+    showToast(`🗑️ 已自族譜移除成員「${target.name}」`);
   };
 
-  // Handlers: Header Title Editing
-  const handleOpenHeaderEdit = () => {
-    if (!canEdit) return;
-    setHeaderDraft(settings);
-    setIsEditingHeader(true);
-  };
-
-  const handleSaveHeader = async (e: React.FormEvent) => {
+  // Handlers: Save Title & Subtitle inside System Settings Modal
+  const handleSaveTitleInSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleaned: FamilySettings = {
       ...settings,
-      logoText: headerDraft.logoText.trim() || '族',
-      title: headerDraft.title.trim() || '家族數位族譜',
-      subtitle: headerDraft.subtitle.trim()
+      title: titleDraft.trim() || '家族數位族譜',
+      subtitle: subtitleDraft.trim()
     };
     setSettings(cleaned);
-    setIsEditingHeader(false);
     if (firebaseConnected) {
       try {
         await saveSettingsToFirestore(cleaned);
+        showToast('✅ 族譜標題已更新並同步至 Firebase！');
       } catch (err) {
-        console.error('Failed to save header settings to Firestore:', err);
+        console.error('Failed to save title settings to Firestore:', err);
+        showToast('✅ 族譜標題已更新（已存於本機）');
       }
+    } else {
+      showToast('✅ 族譜標題已更新！');
     }
-    showToast('✅ 已更新左上角族譜標題！');
   };
 
   // Handlers: Save Member Profile (Auto-closes Editor Modal + Immediate Toast on save!)
@@ -1628,73 +1629,27 @@ export function App() {
     .sort((a, b) => (members[a]?.birthOrder || 0) - (members[b]?.birthOrder || 0));
 
   return (
-    <div className="h-screen flex flex-col bg-stone-100 text-stone-900 overflow-hidden">
-      {/* Compact 2-Row Top Navigation & Elder-Friendly Control Bar (佔比約 1/5) */}
-      <header className="bg-white border-b-2 border-stone-200 px-3 sm:px-6 py-2 shrink-0 z-30 shadow-xs">
+    <div className="fixed inset-0 flex flex-col bg-stone-100 text-stone-900 overflow-hidden select-none">
+      {/* Fixed 2-Row Top Navigation & Elder-Friendly Control Bar (佔比約 1/5) */}
+      <header className="sticky top-0 z-40 bg-white border-b-2 border-stone-200 px-3 sm:px-6 py-2 shrink-0 shadow-xs">
         {/* ROW 1: Left Title & Right Font Size + Welcome + Logout (Parallel with Title) */}
         <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-2">
-          {/* Left: Editable Title & Logo */}
+          {/* Left: Title & Emblem (代表字直接顯示，編輯標題統一於系統設定操作) */}
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-extrabold text-base sm:text-xl shadow-xs shrink-0">
-              {settings.logoText}
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-extrabold text-base sm:text-xl shadow-xs shrink-0 select-none">
+              {settings.logoText || '族'}
             </div>
 
-            {!isEditingHeader ? (
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 truncate">
-                  <h1 className="font-extrabold text-base sm:text-xl text-stone-900 tracking-tight leading-tight truncate">
-                    {settings.title}
-                  </h1>
-                  {canEdit && (
-                    <button
-                      type="button"
-                      onClick={handleOpenHeaderEdit}
-                      className="text-[11px] sm:text-xs px-2 py-0.5 rounded-lg bg-stone-100 hover:bg-emerald-50 text-stone-700 hover:text-emerald-700 border border-stone-300 font-semibold transition shrink-0 cursor-pointer"
-                    >
-                      ✏️ 改標題
-                    </button>
-                  )}
-                </div>
+            <div className="min-w-0">
+              <h1 className="font-extrabold text-base sm:text-xl text-stone-900 tracking-tight leading-tight truncate">
+                {settings.title}
+              </h1>
+              {settings.subtitle && (
                 <p className="text-[11px] text-stone-500 font-medium leading-tight mt-0.5 truncate hidden sm:block">
                   {settings.subtitle}
                 </p>
-              </div>
-            ) : (
-              <form
-                onSubmit={handleSaveHeader}
-                className="flex flex-wrap items-center gap-1.5 bg-stone-50 p-1.5 rounded-xl border-2 border-emerald-500"
-              >
-                <input
-                  type="text"
-                  maxLength={2}
-                  value={headerDraft.logoText}
-                  onChange={(e) => setHeaderDraft({ ...headerDraft, logoText: e.target.value })}
-                  placeholder="圖示"
-                  className="w-10 px-1 py-0.5 text-xs font-bold rounded-lg bg-white border border-stone-300 text-center"
-                />
-                <input
-                  type="text"
-                  value={headerDraft.title}
-                  onChange={(e) => setHeaderDraft({ ...headerDraft, title: e.target.value })}
-                  placeholder="輸入族譜標題"
-                  className="w-36 sm:w-48 px-2 py-0.5 text-xs font-bold rounded-lg bg-white border border-stone-300"
-                  required
-                />
-                <button
-                  type="submit"
-                  className="px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
-                >
-                  儲存
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsEditingHeader(false)}
-                  className="px-2 py-0.5 rounded-lg bg-stone-200 hover:bg-stone-300 text-stone-700 text-xs font-semibold cursor-pointer"
-                >
-                  取消
-                </button>
-              </form>
-            )}
+              )}
+            </div>
           </div>
 
           {/* Right (Row 1): Font Size -> Welcome Name -> System Settings (Admin) -> Logout */}
@@ -2806,11 +2761,11 @@ export function App() {
       {isDetailModalOpen && selectedMember && (
         <div
           onClick={() => setIsDetailModalOpen(false)}
-          className="fixed inset-0 z-40 bg-black/55 flex items-center justify-center p-4 overflow-y-auto"
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto py-8 sm:py-12"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white border-2 border-stone-200 rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-5 relative"
+            className="bg-white border-2 border-stone-200 rounded-3xl max-w-xl w-full p-5 sm:p-6 shadow-2xl space-y-4 relative my-auto max-h-[86dvh] overflow-y-auto pb-8"
           >
             <button
               type="button"
@@ -3027,11 +2982,11 @@ export function App() {
       {isEditorDrawerOpen && (
         <div
           onClick={() => setIsEditorDrawerOpen(false)}
-          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto py-8 sm:py-12"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-4xl bg-white border-2 border-stone-200 rounded-3xl p-5 sm:p-8 shadow-2xl my-auto max-h-[92vh] overflow-y-auto"
+            className="w-full max-w-4xl bg-white border-2 border-stone-200 rounded-3xl p-5 sm:p-8 shadow-2xl my-auto max-h-[86dvh] overflow-y-auto pb-10"
           >
             {/* Modal Header */}
             <div className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-stone-100 pb-4 mb-6">
@@ -3445,17 +3400,17 @@ export function App() {
 
               {/* Modal Footer */}
               <div className="pt-4 border-t border-stone-200 flex flex-wrap items-center justify-between gap-3">
-                {canEdit && !INITIAL_MEMBERS[selectedId] ? (
+                {canEdit && !PROTECTED_CORE_IDS.has(selectedId) ? (
                   <button
                     type="button"
                     onClick={() => handleDeleteMember(selectedId)}
-                    className="px-4 py-2.5 rounded-xl border border-red-300 text-red-600 hover:bg-red-50 text-sm font-bold cursor-pointer"
+                    className="px-4 py-2.5 rounded-xl border border-red-300 text-red-600 hover:bg-red-50 text-sm font-bold cursor-pointer transition"
                   >
                     🗑️ 刪除此成員
                   </button>
                 ) : (
-                  <span className="text-xs font-bold text-emerald-700">
-                    ✓ 按下「儲存變更」後將自動更新並關閉此視窗
+                  <span className="text-xs font-bold text-stone-500">
+                    （核心骨幹成員：如需修改請直接編輯姓名與資料）
                   </span>
                 )}
 
@@ -3647,11 +3602,11 @@ export function App() {
       {isAddModalOpen && members[addAnchorId] && (
         <div
           onClick={() => setIsAddModalOpen(false)}
-          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto py-8 sm:py-12"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-4xl bg-white border-2 border-stone-200 rounded-3xl p-5 sm:p-8 shadow-2xl my-auto max-h-[92vh] overflow-y-auto"
+            className="w-full max-w-4xl bg-white border-2 border-stone-200 rounded-3xl p-5 sm:p-8 shadow-2xl my-auto max-h-[86dvh] overflow-y-auto pb-10"
           >
             {/* Modal Header */}
             <div className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-stone-100 pb-4 mb-5">
@@ -4087,24 +4042,24 @@ export function App() {
       )}
 
       {/* ===================================================================== */}
-      {/* MODAL 3: Unified System Settings (⚙️ 系統設定：密碼授權 ＆ Firebase 設定) */}
+      {/* MODAL 3: Unified System Settings (⚙️ 系統設定：標題修改、密碼授權 ＆ Firebase 設定) */}
       {/* ===================================================================== */}
       {isSecurityModalOpen && (
         <div
           onClick={() => setIsSecurityModalOpen(false)}
-          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-4 overflow-y-auto"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto py-8 sm:py-12"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white border-2 border-stone-200 rounded-3xl max-w-3xl w-full p-6 sm:p-7 shadow-2xl space-y-5 my-auto max-h-[92vh] overflow-y-auto"
+            className="bg-white border-2 border-stone-200 rounded-3xl max-w-3xl w-full p-5 sm:p-7 shadow-2xl space-y-5 my-auto max-h-[86dvh] overflow-y-auto pb-10"
           >
             <div className="flex items-center justify-between border-b border-stone-200 pb-3">
               <div>
                 <h3 className="text-xl font-extrabold text-stone-900">
-                  ⚙️ 系統設定（密碼授權、成員管理與 Firebase 設定）
+                  ⚙️ 系統設定（網站標題、密碼授權、成員管理與 Firebase）
                 </h3>
                 <p className="text-sm text-stone-600 mt-0.5">
-                  管理員可在此切換設定「密碼與 Gmail 授權」或「Firebase 雲端資料庫連動」。
+                  管理員可在此自訂族譜標題、管理家族通行密碼與白名單，或設定 Firebase 雲端資料庫。
                 </p>
               </div>
               <button
@@ -4127,7 +4082,7 @@ export function App() {
                     : 'text-stone-700 hover:bg-stone-200'
                 }`}
               >
-                🛡️ 密碼授權與成員管理
+                🛡️ 網站標題與成員管理
               </button>
               <button
                 type="button"
@@ -4144,13 +4099,61 @@ export function App() {
 
             {systemSettingsTab === 'security' ? (
               <div className="space-y-5">
-                {/* Section 1: Family Passcode for Elders */}
+                {/* Section 1: Family Tree Title & Subtitle Editing */}
                 <form
-                  onSubmit={handleSaveSecuritySettings}
+                  onSubmit={handleSaveTitleInSettings}
                   className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3"
                 >
-                  <div className="text-base font-extrabold text-emerald-950">
-                    1️⃣ 更新首頁「家族通行密碼」（供長輩與親友登入查閱）
+                  <div className="text-base font-extrabold text-emerald-950 flex items-center justify-between">
+                    <span>1️⃣ 族譜網站標題與副標題設定</span>
+                  </div>
+                  <p className="text-xs text-stone-600">
+                    設定顯示於畫面最上方的族譜名稱，儲存後會即時更新並同步至所有裝置。
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        網站主標題
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={titleDraft}
+                        onChange={(e) => setTitleDraft(e.target.value)}
+                        placeholder="請輸入族譜主標題"
+                        className="w-full px-3.5 py-2 rounded-xl bg-white border border-emerald-300 font-extrabold text-stone-900 text-sm focus:outline-none focus:border-emerald-600"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        副標題說明（選填）
+                      </label>
+                      <input
+                        type="text"
+                        value={subtitleDraft}
+                        onChange={(e) => setSubtitleDraft(e.target.value)}
+                        placeholder="請輸入副標題（選填）"
+                        className="w-full px-3.5 py-2 rounded-xl bg-white border border-emerald-300 font-medium text-stone-900 text-sm focus:outline-none focus:border-emerald-600"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="submit"
+                      className="px-5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-sm cursor-pointer shadow-2xs"
+                    >
+                      💾 儲存族譜標題
+                    </button>
+                  </div>
+                </form>
+
+                {/* Section 2: Family Passcode for Elders */}
+                <form
+                  onSubmit={handleSaveSecuritySettings}
+                  className="bg-stone-50 border border-stone-200 rounded-2xl p-4 space-y-3"
+                >
+                  <div className="text-base font-extrabold text-stone-900">
+                    2️⃣ 更新首頁「家族通行密碼」（供長輩與親友登入查閱）
                   </div>
                   <p className="text-xs text-stone-600">
                     親友於首頁輸入此密碼即可進入族譜（唯讀防誤觸），輸入正確後系統會自動提示是否記住密碼。
@@ -4162,21 +4165,21 @@ export function App() {
                       value={passcodeDraft}
                       onChange={(e) => setPasscodeDraft(e.target.value)}
                       placeholder="請輸入新的家族通行密碼"
-                      className="flex-1 min-w-[200px] px-4 py-2 rounded-xl bg-white border border-emerald-300 font-extrabold text-stone-900"
+                      className="flex-1 min-w-[200px] px-4 py-2 rounded-xl bg-white border border-stone-300 font-extrabold text-stone-900 focus:outline-none focus:border-emerald-600"
                     />
                     <button
                       type="submit"
-                      className="px-5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-sm cursor-pointer"
+                      className="px-5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-sm cursor-pointer shadow-2xs"
                     >
                       💾 更新家族密碼
                     </button>
                   </div>
                 </form>
 
-                {/* Section 2: Authorized Admin Gmail Whitelist (Add / Edit / Remove) */}
+                {/* Section 3: Authorized Admin Gmail Whitelist (Add / Edit / Remove) */}
                 <div className="bg-sky-50/70 border border-sky-200 rounded-2xl p-4 space-y-3">
                   <div className="text-base font-extrabold text-sky-950">
-                    2️⃣ 維護「可編輯成員 Gmail 白名單」（僅白名單帳號可使用管理員登入）
+                    3️⃣ 維護「可編輯成員 Gmail 白名單」（僅白名單帳號可使用管理員登入）
                   </div>
                   <p className="text-xs text-stone-600">
                     只有列於下方白名單內的 Gmail 帳號，才允許透過首頁下方的「管理員登入」進入並修改族譜資料。
@@ -4336,11 +4339,12 @@ export function App() {
                           >
                             + 新增親屬
                           </button>
-                          {!INITIAL_MEMBERS[m.id] && (
+                          {!PROTECTED_CORE_IDS.has(m.id) && (
                             <button
                               type="button"
                               onClick={() => handleDeleteMember(m.id)}
-                              className="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold cursor-pointer"
+                              className="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold cursor-pointer transition"
+                              title="刪除此成員"
                             >
                               🗑️
                             </button>
