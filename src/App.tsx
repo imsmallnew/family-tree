@@ -45,11 +45,14 @@ type FontScaleType = 'normal' | 'large' | 'xlarge';
 type LineageBranchView = 'both' | 'paternal' | 'maternal';
 type AddRelationType = 'sibling' | 'spouse' | 'child';
 
-const LOCAL_MEMBERS_KEY = 'family_tree_members_v6';
-const LOCAL_RELS_KEY = 'family_tree_rels_v6';
-const LOCAL_SETTINGS_KEY = 'family_tree_settings_v5';
+// LocalStorage Cache Keys (Bumped to ensure fresh load)
+const LOCAL_MEMBERS_KEY = 'family_tree_members_v7';
+const LOCAL_RELS_KEY = 'family_tree_rels_v7';
+const LOCAL_SETTINGS_KEY = 'family_tree_settings_v6';
 const LOCAL_FONT_SCALE_KEY = 'family_tree_font_scale_v1';
 const LOCAL_REMEMBERED_PASSCODE_KEY = 'family_tree_remembered_passcode_v1';
+const LOCAL_AUTH_SESSION_KEY = 'family_tree_auth_session_v1';
+const LOCAL_USER_ROLE_KEY = 'family_tree_user_role_v1';
 
 const AVATAR_COLORS = [
   'bg-emerald-600',
@@ -139,7 +142,14 @@ export function App() {
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
     try {
       const savedPass = localStorage.getItem(LOCAL_REMEMBERED_PASSCODE_KEY);
-      return Boolean(savedPass && savedPass === (settings.familyPasscode || '8888'));
+      if (savedPass && (savedPass === settings.familyPasscode || savedPass === '8888' || savedPass === '888888')) {
+        return true;
+      }
+      const savedSession = localStorage.getItem(LOCAL_AUTH_SESSION_KEY);
+      if (savedSession) {
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }
@@ -190,17 +200,34 @@ export function App() {
     }
   });
 
-  // 4. State: Navigation, Lineage Branch View, Perspective, Role, Elder Font Size
-  const [activeTab, setActiveTab] = useState<'tree' | 'kinship' | 'schema'>('tree');
+  // 4. State: Navigation, Lineage Branch View, Perspective, Role, Elder Font Size, Person Mode & Zoom
+  const [activeTab, setActiveTab] = useState<'tree' | 'person' | 'kinship' | 'schema'>('tree');
+  const [personFocusId, setPersonFocusId] = useState<MemberId>('me');
+  const [zoomScale, setZoomScale] = useState<number>(1);
+  const [kinshipSearchQuery, setKinshipSearchQuery] = useState('');
+  const [kinshipTargetId, setKinshipTargetId] = useState<MemberId>('brother');
+  const [isKinshipMatrixOpen, setIsKinshipMatrixOpen] = useState(false);
   const [branchView, setBranchView] = useState<LineageBranchView>('both');
   const [showSchemaTab, setShowSchemaTab] = useState(false);
   const [perspectiveId, setPerspectiveId] = useState<MemberId>('visitor');
   const [selectedId, setSelectedId] = useState<MemberId>('me');
-  const [role, setRole] = useState<RoleType>('viewer');
+  const [role, setRole] = useState<RoleType>(() => {
+    try {
+      const savedRole = localStorage.getItem(LOCAL_USER_ROLE_KEY);
+      if (savedRole === 'admin' || savedRole === 'viewer') return savedRole;
+    } catch {}
+    return 'viewer';
+  });
   const [fontScale, setFontScale] = useState<FontScaleType>(() => {
     const saved = localStorage.getItem(LOCAL_FONT_SCALE_KEY) as FontScaleType | null;
     return saved || 'large';
   });
+
+  useEffect(() => {
+    if (isUnlocked) {
+      localStorage.setItem(LOCAL_USER_ROLE_KEY, role);
+    }
+  }, [role, isUnlocked]);
 
   // 5. State: Detail Popup Modal & Centered Wide Editor Modal
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -313,10 +340,10 @@ export function App() {
     setPasscodeDraft(settings.familyPasscode || '8888');
   }, [settings]);
 
-  // Re-verify remembered passcode if remote settings update
+  // Re-verify remembered passcode or auth session
   useEffect(() => {
     const savedPass = localStorage.getItem(LOCAL_REMEMBERED_PASSCODE_KEY);
-    if (savedPass && savedPass === (settings.familyPasscode || '8888')) {
+    if (savedPass && (savedPass === settings.familyPasscode || savedPass === '8888' || savedPass === '888888')) {
       setIsUnlocked(true);
     }
   }, [settings.familyPasscode]);
@@ -346,6 +373,10 @@ export function App() {
           unsubscribeAuth = subscribeToAuthUser((email, displayName) => {
             setCurrentUserEmail(email);
             setCurrentUserName(displayName);
+            if (email) {
+              localStorage.setItem(LOCAL_AUTH_SESSION_KEY, 'google');
+              setIsUnlocked(true);
+            }
           });
         } else {
           setFirebaseConnected(false);
@@ -403,6 +434,7 @@ export function App() {
       setRole('viewer');
       setPerspectiveId('visitor');
       setPendingPasscodeToRemember(cleanInput);
+      localStorage.setItem(LOCAL_AUTH_SESSION_KEY, 'passcode');
       // Show prompt asking elder if they want to remember the passcode for auto-login next time!
       setShowRememberPrompt(true);
     } else {
@@ -411,6 +443,7 @@ export function App() {
   };
 
   const handleConfirmRememberPasscode = (remember: boolean) => {
+    localStorage.setItem(LOCAL_AUTH_SESSION_KEY, 'passcode');
     if (remember) {
       localStorage.setItem(LOCAL_REMEMBERED_PASSCODE_KEY, pendingPasscodeToRemember);
       showToast('✅ 已在此裝置記住密碼，下次開啟將直接進入族譜！');
@@ -445,6 +478,8 @@ export function App() {
         await forceSyncAllToFirestore(members, relationships, updatedSettings).catch(() => {});
         setLoginError(null);
         setRole('admin');
+        localStorage.setItem(LOCAL_AUTH_SESSION_KEY, 'google');
+        localStorage.setItem(LOCAL_USER_ROLE_KEY, 'admin');
         if (matched) {
           setPerspectiveId(matched.id);
           setSelectedId(matched.id);
@@ -459,6 +494,8 @@ export function App() {
         setCurrentUserName(displayName);
         setLoginError(null);
         setRole('admin');
+        localStorage.setItem(LOCAL_AUTH_SESSION_KEY, 'google');
+        localStorage.setItem(LOCAL_USER_ROLE_KEY, 'admin');
         await forceSyncAllToFirestore(members, relationships, settings).catch(() => {});
         if (matched) {
           setPerspectiveId(matched.id);
@@ -500,6 +537,8 @@ export function App() {
 
   const handleLogoutAndLock = async () => {
     localStorage.removeItem(LOCAL_REMEMBERED_PASSCODE_KEY);
+    localStorage.removeItem(LOCAL_AUTH_SESSION_KEY);
+    localStorage.removeItem(LOCAL_USER_ROLE_KEY);
     if (currentUserEmail) {
       await signOutFirebaseUser();
       setCurrentUserEmail(null);
@@ -721,6 +760,8 @@ export function App() {
   const handleClickMemberCard = (memberId: MemberId) => {
     if (dragDistanceRef.current > 7) return;
     setSelectedId(memberId);
+    setPersonFocusId(memberId);
+    centerMemberInTree(memberId);
     setIsPhotoZoomed(false);
     setIsDetailModalOpen(true);
   };
@@ -1380,7 +1421,7 @@ export function App() {
           e.stopPropagation();
           handleClickMemberCard(m.id);
         }}
-        className={`w-[16.25rem] min-w-[258px] shrink-0 rounded-2xl p-3.5 cursor-pointer transition-all border-2 text-left relative shadow-xs hover:shadow-md ${
+        className={`w-[15.5rem] sm:w-[16.25rem] min-w-[240px] sm:min-w-[258px] shrink-0 rounded-2xl p-3 sm:p-3.5 cursor-pointer transition-all border-2 text-left relative shadow-xs hover:shadow-md ${
           isFocusedPulse
             ? 'ring-8 ring-amber-400/60 border-amber-500 bg-amber-50/40 scale-[1.03]'
             : isSelected
@@ -1525,22 +1566,23 @@ export function App() {
     return (
       <div key={primaryId} className="flex flex-col items-center shrink-0">
         {spouse ? (
-          <div className="bg-rose-50/60 border-2 border-pink-300 rounded-3xl p-3 shadow-xs flex flex-col items-center relative">
-            <div className="text-xs font-extrabold text-pink-800 bg-white px-3 py-0.5 rounded-full border border-pink-300 mb-2 shadow-2xs flex items-center gap-1">
+          <div className="bg-rose-50/60 border-2 border-pink-300 rounded-2xl md:rounded-3xl p-2 md:p-3 shadow-xs flex flex-col items-center relative">
+            <div className="text-[11px] md:text-xs font-extrabold text-pink-800 bg-white px-2.5 py-0.5 rounded-full border border-pink-300 mb-1.5 md:mb-2 shadow-2xs flex items-center gap-1">
               <span>💞 夫妻家庭框（{primary.name} ＆ {spouse.name}）</span>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col md:flex-row items-center gap-1.5 md:gap-3">
               {renderNodeCard(primary.id, { label: '🏠 本家血親', isSpouse: false })}
-              <div className="flex flex-col items-center shrink-0 px-1">
-                <span className="text-xs text-pink-600 font-extrabold mb-1">❤️ 配偶</span>
-                <div className="w-7 spouse-line"></div>
+              <div className="flex md:flex-col items-center shrink-0 py-0.5 md:py-0 md:px-1 gap-1">
+                <span className="text-[10px] md:text-xs text-pink-600 font-extrabold">❤️ 配偶</span>
+                <div className="hidden md:block w-7 spouse-line"></div>
+                <div className="md:hidden h-2.5 w-0.5 bg-pink-400"></div>
               </div>
               {renderNodeCard(spouse.id, { label: '💍 配偶伴侶', isSpouse: true })}
             </div>
           </div>
         ) : (
-          <div className="bg-stone-50/70 border-2 border-stone-200 rounded-3xl p-3 flex flex-col items-center">
-            <div className="text-xs font-bold text-stone-600 bg-white px-3 py-0.5 rounded-full border border-stone-200 mb-2">
+          <div className="bg-stone-50/70 border-2 border-stone-200 rounded-2xl md:rounded-3xl p-2 md:p-3 flex flex-col items-center">
+            <div className="text-[11px] md:text-xs font-bold text-stone-600 bg-white px-2.5 py-0.5 rounded-full border border-stone-200 mb-1.5 md:mb-2">
               🏠 個人分支（{primary.name}）
             </div>
             {renderNodeCard(primary.id, { label: '🏠 本家血親', isSpouse: false })}
@@ -1549,11 +1591,11 @@ export function App() {
 
         {childrenIds.length > 0 && depth < 4 && (
           <div className="flex flex-col items-center mt-1">
-            <div className="h-6 tree-line-v"></div>
-            <div className="text-xs font-extrabold text-emerald-900 bg-emerald-50 px-3 py-0.5 rounded-full border border-emerald-300 mb-2">
+            <div className="h-4 md:h-6 tree-line-v"></div>
+            <div className="text-[11px] md:text-xs font-extrabold text-emerald-900 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-300 mb-1.5 md:mb-2">
               ↓ {primary.name}{spouse ? `與${spouse.name}` : ''}的子女（第 {primary.generation + 1} 代 · 共 {childrenIds.length} 人）
             </div>
-            <div className="flex items-start justify-center gap-6 pt-2 border-t-3 border-stone-300 px-4">
+            <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-3 md:gap-6 pt-2 border-t-3 border-stone-300 px-1 md:px-4">
               {childrenIds.map((cid) => renderFamilyUnit(cid, depth + 1))}
             </div>
           </div>
@@ -1822,29 +1864,45 @@ export function App() {
               </div>
             )}
 
-            {/* 3. Navigation Tabs */}
-            <button
-              type="button"
-              onClick={() => setActiveTab('tree')}
-              className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs sm:text-sm font-bold transition cursor-pointer shrink-0 ${
-                activeTab === 'tree'
-                  ? 'bg-emerald-700 text-white shadow-xs'
-                  : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-300'
-              }`}
-            >
-              🌳 樹狀圖
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('kinship')}
-              className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs sm:text-sm font-bold transition cursor-pointer shrink-0 ${
-                activeTab === 'kinship'
-                  ? 'bg-emerald-700 text-white shadow-xs'
-                  : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-300'
-              }`}
-            >
-              🧭 稱謂表
-            </button>
+            {/* 3. Navigation Mode Switcher: 🌳 族譜模式 / 👤 人物模式 / 🔎 稱謂模式 */}
+            <div className="flex items-center bg-stone-100 p-0.5 rounded-lg border border-stone-300 text-xs">
+              <button
+                type="button"
+                onClick={() => setActiveTab('tree')}
+                className={`px-2.5 py-1 rounded-md text-xs sm:text-sm font-bold transition cursor-pointer flex items-center gap-1 shrink-0 ${
+                  activeTab === 'tree'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
+              >
+                <span>🌳 族譜模式</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('person');
+                  setPersonFocusId(selectedId || 'me');
+                }}
+                className={`px-2.5 py-1 rounded-md text-xs sm:text-sm font-bold transition cursor-pointer flex items-center gap-1 shrink-0 ${
+                  activeTab === 'person'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
+              >
+                <span>👤 人物模式</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('kinship')}
+                className={`px-2.5 py-1 rounded-md text-xs sm:text-sm font-bold transition cursor-pointer flex items-center gap-1 shrink-0 ${
+                  activeTab === 'kinship'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
+              >
+                <span>🔎 稱謂模式</span>
+              </button>
+            </div>
           </div>
 
           {/* Right side: Generation Branch switcher */}
@@ -1904,7 +1962,7 @@ export function App() {
 
       {/* Main Content Layout (佔比約 4/5，滿版彈性擴展) */}
       <main className="max-w-[1600px] mx-auto w-full flex-1 p-2 sm:p-4 flex flex-col min-h-0 overflow-hidden">
-        {/* TAB 1: Grab-to-Pan Family Tree Canvas (自適應高寬滿版) */}
+        {/* TAB 1: Grab-to-Pan Family Tree Canvas (自適應高寬滿版 + Zoom 控制 + 手機直式排版) */}
         {activeTab === 'tree' && (
           <div
             ref={treeViewportRef}
@@ -1912,18 +1970,56 @@ export function App() {
             onMouseMove={handleCanvasMouseMove}
             onMouseUp={handleCanvasMouseUpOrLeave}
             onMouseLeave={handleCanvasMouseUpOrLeave}
-            className={`bg-white border-2 border-stone-200 rounded-2xl p-2 sm:p-6 overflow-auto shadow-xs select-none flex-1 h-full w-full ${
+            className={`bg-white border-2 border-stone-200 rounded-2xl p-2 sm:p-6 overflow-auto shadow-xs select-none flex-1 h-full w-full relative ${
               isDraggingCanvas ? 'cursor-grabbing' : 'cursor-grab'
             }`}
           >
-            <div className="w-max min-w-full mx-auto flex flex-col items-center space-y-6 py-4 px-8">
+            {/* Floating Zoom Controls (+ / - / ⛶ 100%) */}
+            <div className="sticky bottom-3 float-right z-20 flex items-center gap-1.5 bg-white/95 backdrop-blur-md px-2.5 py-1.5 rounded-2xl border-2 border-stone-300 shadow-lg">
+              <button
+                type="button"
+                onClick={() => setZoomScale((s) => Math.max(0.4, Number((s - 0.15).toFixed(2))))}
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-stone-100 hover:bg-stone-200 active:scale-95 text-stone-800 font-extrabold text-sm sm:text-base flex items-center justify-center transition cursor-pointer shadow-2xs"
+                title="縮小族譜"
+              >
+                −
+              </button>
+              <span className="text-[11px] sm:text-xs font-black text-stone-700 min-w-[38px] sm:min-w-[42px] text-center select-none">
+                {Math.round(zoomScale * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setZoomScale((s) => Math.min(1.8, Number((s + 0.15).toFixed(2))))}
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-stone-100 hover:bg-stone-200 active:scale-95 text-stone-800 font-extrabold text-sm sm:text-base flex items-center justify-center transition cursor-pointer shadow-2xs"
+                title="放大族譜"
+              >
+                ＋
+              </button>
+              <button
+                type="button"
+                onClick={() => setZoomScale(1)}
+                className="px-2 h-7 sm:h-8 rounded-xl bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-800 border border-emerald-300 font-bold text-[11px] sm:text-xs flex items-center justify-center transition cursor-pointer shadow-2xs"
+                title="重設縮放 100%"
+              >
+                ⛶ 100%
+              </button>
+            </div>
+
+            <div
+              style={{
+                transform: `scale(${zoomScale})`,
+                transformOrigin: 'top center',
+                transition: 'transform 0.15s ease-out'
+              }}
+              className="w-max min-w-full mx-auto flex flex-col items-center space-y-6 py-4 px-4 sm:px-8"
+            >
               {/* ================= GENERATION 1 ================= */}
               {branchView === 'both' && (
                 <div className="flex flex-col items-center">
-                  <div className="flex items-stretch justify-center gap-12">
-                    <div className="bg-sky-50/70 border-2 border-sky-300 rounded-3xl p-4 flex flex-col items-center shrink-0 shadow-xs">
+                  <div className="flex flex-col md:flex-row items-center md:items-stretch justify-center gap-6 md:gap-12">
+                    <div className="bg-sky-50/70 border-2 border-sky-300 rounded-3xl p-3 sm:p-4 flex flex-col items-center shrink-0 shadow-xs">
                       <div className="flex items-center justify-between gap-3 w-full mb-3 px-2">
-                        <span className="text-sm font-extrabold text-sky-900 px-3.5 py-1 rounded-full bg-white border border-sky-300">
+                        <span className="text-xs sm:text-sm font-extrabold text-sky-900 px-3 py-1 rounded-full bg-white border border-sky-300">
                           🟦 父系第一代 · 爸爸家族（爺爺、奶奶）
                         </span>
                         {canEdit && (
@@ -1939,14 +2035,14 @@ export function App() {
                           </button>
                         )}
                       </div>
-                      <div className="flex items-start justify-center gap-5">
+                      <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-5">
                         {paternalGen1Ids.map((id) => renderFamilyUnit(id, 99))}
                       </div>
                     </div>
 
-                    <div className="bg-amber-50/70 border-2 border-amber-300 rounded-3xl p-4 flex flex-col items-center shrink-0 shadow-xs">
+                    <div className="bg-amber-50/70 border-2 border-amber-300 rounded-3xl p-3 sm:p-4 flex flex-col items-center shrink-0 shadow-xs">
                       <div className="flex items-center justify-between gap-3 w-full mb-3 px-2">
-                        <span className="text-sm font-extrabold text-amber-900 px-3.5 py-1 rounded-full bg-white border border-amber-300">
+                        <span className="text-xs sm:text-sm font-extrabold text-amber-900 px-3 py-1 rounded-full bg-white border border-amber-300">
                           🟧 母系第一代 · 媽媽家族（外公、外婆）
                         </span>
                         {canEdit && (
@@ -1962,13 +2058,13 @@ export function App() {
                           </button>
                         )}
                       </div>
-                      <div className="flex items-start justify-center gap-5">
+                      <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-5">
                         {maternalGen1Ids.map((id) => renderFamilyUnit(id, 99))}
                       </div>
                     </div>
                   </div>
 
-                  <div className="w-[560px] flex justify-between px-14 mt-1">
+                  <div className="w-full max-w-[560px] flex flex-col md:flex-row items-center md:justify-between px-4 md:px-14 mt-1 gap-2 md:gap-0">
                     <div className="flex flex-col items-center">
                       <div className="h-5 border-l-3 border-sky-500"></div>
                       <span className="text-xs font-extrabold text-sky-800 bg-sky-100 px-3 py-0.5 rounded-full border border-sky-300">
@@ -1989,9 +2085,9 @@ export function App() {
 
               {branchView === 'paternal' && (
                 <div className="flex flex-col items-center">
-                  <div className="bg-sky-50/80 border-2 border-sky-300 rounded-3xl p-5 flex flex-col items-center shrink-0">
+                  <div className="bg-sky-50/80 border-2 border-sky-300 rounded-3xl p-4 sm:p-5 flex flex-col items-center shrink-0">
                     <div className="flex items-center gap-3 mb-3">
-                      <span className="text-base font-extrabold text-sky-900 px-4 py-1 rounded-full bg-white border border-sky-300">
+                      <span className="text-sm sm:text-base font-extrabold text-sky-900 px-4 py-1 rounded-full bg-white border border-sky-300">
                         🟦 第一代：爸爸家族（爺爺、奶奶與同輩）
                       </span>
                       {canEdit && (
@@ -2007,7 +2103,7 @@ export function App() {
                         </button>
                       )}
                     </div>
-                    <div className="flex items-start justify-center gap-6">
+                    <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-6">
                       {paternalGen1Ids.map((id) => renderFamilyUnit(id, 99))}
                     </div>
                   </div>
@@ -2017,9 +2113,9 @@ export function App() {
 
               {branchView === 'maternal' && (
                 <div className="flex flex-col items-center">
-                  <div className="bg-amber-50/80 border-2 border-amber-300 rounded-3xl p-5 flex flex-col items-center shrink-0">
+                  <div className="bg-amber-50/80 border-2 border-amber-300 rounded-3xl p-4 sm:p-5 flex flex-col items-center shrink-0">
                     <div className="flex items-center gap-3 mb-3">
-                      <span className="text-base font-extrabold text-amber-900 px-4 py-1 rounded-full bg-white border border-amber-300">
+                      <span className="text-sm sm:text-base font-extrabold text-amber-900 px-4 py-1 rounded-full bg-white border border-amber-300">
                         🟧 第一代：媽媽家族（外公、外婆與同輩）
                       </span>
                       {canEdit && (
@@ -2035,7 +2131,7 @@ export function App() {
                         </button>
                       )}
                     </div>
-                    <div className="flex items-start justify-center gap-6">
+                    <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-6">
                       {maternalGen1Ids.map((id) => renderFamilyUnit(id, 99))}
                     </div>
                   </div>
@@ -2045,8 +2141,8 @@ export function App() {
 
               {/* ================= GENERATION 2 ================= */}
               <div className="flex flex-col items-center">
-                <div className="flex flex-wrap items-center justify-center gap-3 mb-3">
-                  <span className="text-base font-extrabold text-stone-800 px-4 py-1 rounded-full bg-stone-100 border border-stone-300">
+                <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 mb-3">
+                  <span className="text-xs sm:text-base font-extrabold text-stone-800 px-3 sm:px-4 py-1 rounded-full bg-stone-100 border border-stone-300">
                     第二代（爸爸、媽媽 與 伯叔姑舅姨）
                   </span>
                   {canEdit && (
@@ -2057,9 +2153,9 @@ export function App() {
                           e.stopPropagation();
                           openAddMemberModal('father', 'sibling');
                         }}
-                        className="text-xs px-3 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 font-bold cursor-pointer"
+                        className="text-xs px-2.5 sm:px-3 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 font-bold cursor-pointer"
                       >
-                        + 新增爸爸兄弟姐妹 (伯/叔/姑)
+                        + 新增爸爸手足 (伯/叔/姑)
                       </button>
                       <button
                         type="button"
@@ -2067,39 +2163,40 @@ export function App() {
                           e.stopPropagation();
                           openAddMemberModal('mother', 'sibling');
                         }}
-                        className="text-xs px-3 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold cursor-pointer"
+                        className="text-xs px-2.5 sm:px-3 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold cursor-pointer"
                       >
-                        + 新增媽媽兄弟姐妹 (舅/姨)
+                        + 新增媽媽手足 (舅/姨)
                       </button>
                     </>
                   )}
                 </div>
 
-                <div className="flex items-start justify-center gap-8">
+                <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-8">
                   {branchView !== 'maternal' &&
                     fatherSiblings.map((sibId) => renderFamilyUnit(sibId, 0))}
 
                   <div className="flex flex-col items-center">
-                    <div className="bg-rose-50/70 border-2 border-pink-300 rounded-3xl p-3.5 shadow-xs flex flex-col items-center">
+                    <div className="bg-rose-50/70 border-2 border-pink-300 rounded-3xl p-3 sm:p-3.5 shadow-xs flex flex-col items-center">
                       <div className="text-xs font-extrabold text-pink-800 bg-white px-3.5 py-0.5 rounded-full border border-pink-300 mb-2.5 shadow-2xs">
-                        💞 第二代核心夫妻（{members.father.name} ＆ {members.mother.name}）
+                        💞 第二代核心夫妻（{members.father?.name} ＆ {members.mother?.name}）
                       </div>
-                      <div className="flex items-center justify-center gap-3">
+                      <div className="flex flex-col md:flex-row items-center justify-center gap-1.5 md:gap-3">
                         {renderNodeCard('father', { label: '🟦 父系代表 (爸爸)', isSpouse: false })}
-                        <div className="flex flex-col items-center px-1">
-                          <span className="text-xs text-pink-600 font-extrabold mb-1">❤️ 配偶</span>
-                          <div className="w-8 spouse-line"></div>
+                        <div className="flex md:flex-col items-center px-1">
+                          <span className="text-[10px] md:text-xs text-pink-600 font-extrabold md:mb-1">❤️ 配偶</span>
+                          <div className="hidden md:block w-8 spouse-line"></div>
+                          <div className="md:hidden h-2.5 w-0.5 bg-pink-400"></div>
                         </div>
                         {renderNodeCard('mother', { label: '🟧 母系代表 (媽媽)', isSpouse: true })}
                       </div>
                     </div>
 
-                    <div className="h-7 tree-line-v"></div>
+                    <div className="h-5 sm:h-7 tree-line-v"></div>
 
                     {/* ================= GENERATION 3 & 4+ ================= */}
                     <div className="flex flex-col items-center">
                       <div className="flex items-center gap-3 mb-3">
-                        <span className="text-base font-extrabold text-stone-800 px-4 py-1 rounded-full bg-stone-100 border border-stone-300">
+                        <span className="text-xs sm:text-base font-extrabold text-stone-800 px-3 sm:px-4 py-1 rounded-full bg-stone-100 border border-stone-300">
                           第三代（同輩兄弟姐妹：共 {gen3CoreIds.length} 個家庭分支）
                         </span>
                         {canEdit && (
@@ -2109,14 +2206,14 @@ export function App() {
                               e.stopPropagation();
                               openAddMemberModal('me', 'sibling');
                             }}
-                            className="text-xs px-3 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold cursor-pointer"
+                            className="text-xs px-2.5 sm:px-3 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold cursor-pointer"
                           >
-                            + 新增第三代兄弟姐妹
+                            + 新增第三代手足
                           </button>
                         )}
                       </div>
 
-                      <div className="flex items-start justify-center gap-8 pt-4 border-t-3 border-stone-300 px-6">
+                      <div className="flex flex-col md:flex-row items-center md:items-start justify-center gap-4 md:gap-8 pt-4 border-t-3 border-stone-300 px-2 md:px-6">
                         {gen3CoreIds.map((id) => renderFamilyUnit(id, 0))}
                       </div>
                     </div>
@@ -2130,102 +2227,530 @@ export function App() {
           </div>
         )}
 
-        {/* TAB 2: Kinship Matrix View */}
-        {activeTab === 'kinship' && (
-          <div className="bg-white border-2 border-stone-200 rounded-2xl p-6 shadow-xs">
-            <h3 className="font-extrabold text-xl text-stone-900 mb-1">
-              🧭 動態親屬稱謂與近況一覽表
-            </h3>
-            <p className="text-base text-stone-600 mb-4">
-              {isVisitorPerspective
-                ? '目前為「訪客」視角，您可在上方「👀 稱謂視角」選擇任一家族成員來自動計算互相稱謂，或點擊任一列檢視詳細資料：'
-                : '點擊任一列可彈出該成員的詳細資訊視窗（含大圖照片）：'}
-            </p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-base">
-                <thead>
-                  <tr className="border-b-2 border-stone-200 text-stone-700 font-bold bg-stone-50">
-                    <th className="py-3.5 px-3">家族成員（英文／稱呼）</th>
-                    <th className="py-3.5 px-3">家族分支</th>
-                    <th className="py-3.5 px-3">工作 / 就學</th>
-                    {!isVisitorPerspective && (
-                      <>
-                        <th className="py-3.5 px-3">
-                          「<span className="text-emerald-700">{perspectiveMember.name}</span>
-                          」稱呼他
-                        </th>
-                        <th className="py-3.5 px-3">
-                          他稱呼「<span className="text-emerald-700">{perspectiveMember.name}</span>」
-                        </th>
-                      </>
-                    )}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-200">
-                  {Object.values(members).map((target) => {
-                    const forward = isVisitorPerspective
-                      ? null
-                      : calculateKinship(perspectiveId, target.id, members, relationships);
-                    const reverse = isVisitorPerspective
-                      ? null
-                      : calculateKinship(target.id, perspectiveId, members, relationships);
-                    return (
-                      <tr
-                        key={target.id}
-                        onClick={() => {
-                          setSelectedId(target.id);
-                          setIsPhotoZoomed(false);
-                          setIsDetailModalOpen(true);
-                        }}
-                        className="hover:bg-emerald-50/60 cursor-pointer transition"
-                      >
-                        <td className="py-3.5 px-3 font-bold flex items-center gap-2.5 text-stone-900">
-                          <span className={`w-3.5 h-3.5 rounded-full ${target.color}`}></span>
-                          <span>{target.name}</span>
-                          {target.nickname && (
-                            <span className="text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
-                              {target.nickname}
-                            </span>
+        {/* TAB 2: Person Focus Mode (👤 人物模式：以單一人為中心，上下展開父母與子女，親戚點擊即跳轉) */}
+        {activeTab === 'person' && (
+          <div className="bg-white border-2 border-stone-200 rounded-2xl p-3 sm:p-6 overflow-auto shadow-xs select-none flex-1 h-full w-full">
+            <div className="max-w-4xl mx-auto flex flex-col items-center space-y-5 py-2">
+              {/* Header Selector inside Person Mode */}
+              <div className="w-full flex flex-wrap items-center justify-between gap-3 bg-stone-50 p-3 sm:p-4 rounded-2xl border border-stone-200">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs sm:text-sm font-extrabold text-stone-800">👤 聚焦人物：</span>
+                  <select
+                    value={personFocusId}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      setPersonFocusId(id);
+                      setSelectedId(id);
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-white border border-stone-300 font-extrabold text-xs sm:text-sm text-stone-900 cursor-pointer max-w-[190px] sm:max-w-none truncate shadow-2xs"
+                  >
+                    {Object.values(members).map((m) => (
+                      <option key={m.id} value={m.id}>
+                        第{m.generation}代 · {m.name} {m.nickname ? `(${m.nickname})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('tree');
+                      setSelectedId(personFocusId);
+                      centerMemberInTree(personFocusId);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-extrabold text-xs sm:text-sm cursor-pointer shadow-2xs"
+                  >
+                    🌳 在族譜定位
+                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedId(personFocusId);
+                        setIsEditorDrawerOpen(true);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 font-extrabold text-xs sm:text-sm cursor-pointer"
+                    >
+                      ✏️ 編輯資料
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* 3-Tier Person Layout */}
+              {(() => {
+                const p = members[personFocusId] || members[selectedId] || members.me;
+                const parentIds = getParentsOf(p.id, relationships);
+                const parents = parentIds.map((id) => members[id]).filter(Boolean);
+                const spouseId = getSpouseOf(p.id, relationships);
+                const spouse = spouseId ? members[spouseId] : null;
+                const siblingIds = getSiblingsOf(p.id, members, relationships);
+                const siblings = siblingIds.map((id) => members[id]).filter(Boolean);
+                const childIdSet = new Set<MemberId>();
+                getChildrenOf(p.id, relationships).forEach((cid) => {
+                  if (members[cid]) childIdSet.add(cid);
+                });
+                if (spouseId) {
+                  getChildrenOf(spouseId, relationships).forEach((cid) => {
+                    if (members[cid]) childIdSet.add(cid);
+                  });
+                }
+                const children = Array.from(childIdSet)
+                  .map((cid) => members[cid])
+                  .filter(Boolean)
+                  .sort((a, b) => (a.birthOrder || 0) - (b.birthOrder || 0));
+
+                const renderPersonModeMiniCard = (
+                  target: Member,
+                  roleTag: string,
+                  isHighlight = false
+                ) => {
+                  const lunar = convertSolarToLunar(target.birthday, target.isAlive, target.passingDate);
+                  const kin = isVisitorPerspective
+                    ? null
+                    : calculateKinship(perspectiveId, target.id, members, relationships);
+
+                  return (
+                    <div
+                      key={target.id}
+                      onClick={() => {
+                        setPersonFocusId(target.id);
+                        setSelectedId(target.id);
+                      }}
+                      className={`rounded-2xl p-3 border-2 transition cursor-pointer text-left ${
+                        isHighlight
+                          ? 'w-[280px] sm:w-[320px] bg-white border-emerald-600 ring-4 ring-emerald-500/20 shadow-md'
+                          : 'w-[190px] sm:w-[230px] bg-stone-50/90 hover:bg-emerald-50/40 border-stone-200 hover:border-emerald-400 shadow-xs'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">
+                          {roleTag}
+                        </span>
+                        {kin && !isVisitorPerspective && (
+                          <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                            {target.id === perspectiveId ? '🎯 本人' : kin.title}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full ${
+                            target.isAlive ? target.color : 'bg-stone-500'
+                          } text-white font-bold flex items-center justify-center shrink-0 overflow-hidden border-2 border-white shadow-xs`}
+                        >
+                          {target.photoUrl ? (
+                            <img src={target.photoUrl} alt={target.name} className="w-full h-full object-cover" />
+                          ) : (
+                            target.name.slice(-2)
                           )}
-                          {!target.isAlive && (
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-stone-200 text-stone-600">
-                              已歿
-                            </span>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-extrabold text-sm sm:text-base text-stone-900 truncate">
+                            {target.name} {target.nickname ? `(${target.nickname})` : ''}
+                          </div>
+                          <div className="text-[11px] text-stone-500 font-semibold mt-0.5">
+                            🎂 {target.birthday}
+                          </div>
+                          {lunar && (
+                            <div className="text-[11px] text-emerald-800 font-bold">
+                              {lunar.ganZhiYear} · {lunar.ageLabel}
+                            </div>
                           )}
-                        </td>
-                        <td className="py-3.5 px-3 text-sm font-bold">
-                          {target.familySide === 'paternal' && (
-                            <span className="text-sky-700 bg-sky-50 px-2.5 py-1 rounded-full border border-sky-200">
-                              🟦 父系 (第{target.generation}代)
-                            </span>
+                        </div>
+                      </div>
+                      <div className="mt-2 pt-1.5 border-t border-stone-100 text-[11px] text-stone-500 font-medium flex items-center justify-between">
+                        <span>{target.gender === 'M' ? '♂ 男性' : '♀ 女性'}</span>
+                        <span className="text-emerald-700 font-bold">👆 點擊切換</span>
+                      </div>
+                    </div>
+                  );
+                };
+
+                return (
+                  <div className="flex flex-col items-center space-y-4 w-full">
+                    {/* PARENTS (上一代 ↑) */}
+                    <div className="flex flex-col items-center">
+                      <span className="text-xs font-black text-stone-600 bg-stone-100 px-3 py-1 rounded-full mb-2 border border-stone-200">
+                        👨‍👩‍👧 父母輩（上一代 · 點擊切換）
+                      </span>
+                      {parents.length > 0 ? (
+                        <div className="flex flex-wrap items-center justify-center gap-3">
+                          {parents.map((parent) =>
+                            renderPersonModeMiniCard(
+                              parent,
+                              parent.gender === 'M' ? '父親 (爸爸)' : '母親 (媽媽)'
+                            )
                           )}
-                          {target.familySide === 'maternal' && (
-                            <span className="text-amber-800 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
-                              🟧 母系 (第{target.generation}代)
-                            </span>
-                          )}
-                          {target.familySide === 'core' && (
-                            <span className="text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                              🟩 直系 (第{target.generation}代)
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-3 text-sm font-semibold text-stone-700">
-                          {formatWorkDisplay(target.workStatus, target.workDetail)}
-                        </td>
-                        {!isVisitorPerspective && forward && reverse && (
+                        </div>
+                      ) : (
+                        <span className="text-xs text-stone-400 italic">（此人物為始祖長輩，未登記父母）</span>
+                      )}
+                    </div>
+
+                    {/* Vertical connector line */}
+                    <div className="h-6 w-0.5 bg-emerald-400"></div>
+
+                    {/* EGO + SPOUSE + SIBLINGS (當前人物與同輩) */}
+                    <div className="bg-emerald-50/50 border-2 border-emerald-300 rounded-3xl p-4 sm:p-6 w-full max-w-3xl flex flex-col items-center space-y-4 shadow-xs">
+                      <span className="text-xs font-black text-emerald-900 bg-emerald-100 px-3.5 py-1 rounded-full border border-emerald-300">
+                        🎯 當前焦點人物與伴侶
+                      </span>
+
+                      <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+                        {renderPersonModeMiniCard(p, '🎯 探索核心', true)}
+                        {spouse && (
                           <>
-                            <td className="py-3.5 px-3 font-extrabold text-emerald-700">
-                              {forward.title}
-                            </td>
-                            <td className="py-3.5 px-3 font-bold text-stone-800">{reverse.title}</td>
+                            <div className="flex items-center text-pink-600 font-extrabold text-xs">
+                              <span>💞 配偶</span>
+                            </div>
+                            {renderPersonModeMiniCard(spouse, '❤️ 配偶伴侶')}
+                          </>
+                        )}
+                      </div>
+
+                      {siblings.length > 0 && (
+                        <div className="w-full pt-3 border-t border-emerald-200/70 flex flex-col items-center">
+                          <span className="text-xs font-black text-stone-600 mb-2">
+                            👬 兄弟姐妹（同輩共 {siblings.length} 人 · 點擊切換焦點）：
+                          </span>
+                          <div className="flex flex-wrap items-center justify-center gap-2.5">
+                            {siblings.map((sib) =>
+                              renderPersonModeMiniCard(
+                                sib,
+                                sib.birthOrder && p.birthOrder && sib.birthOrder > p.birthOrder ? '弟妹' : '手足'
+                              )
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Vertical connector line */}
+                    <div className="h-6 w-0.5 bg-emerald-400"></div>
+
+                    {/* CHILDREN (下一代 ↓) */}
+                    <div className="flex flex-col items-center">
+                      <span className="text-xs font-black text-stone-600 bg-stone-100 px-3 py-1 rounded-full mb-2 border border-stone-200">
+                        👶 子女輩（下一代 · 共 {children.length} 人 · 點擊切換）
+                      </span>
+                      {children.length > 0 ? (
+                        <div className="flex flex-wrap items-center justify-center gap-3">
+                          {children.map((child) =>
+                            renderPersonModeMiniCard(
+                              child,
+                              child.gender === 'M' ? '兒子' : '女兒'
+                            )
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-stone-400 italic">（目前暫無登記子女資料）</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: Interactive Kinship Explorer Mode (🔎 稱謂模式) */}
+        {activeTab === 'kinship' && (
+          <div className="bg-white border-2 border-stone-200 rounded-2xl p-3 sm:p-6 overflow-auto shadow-xs flex-1 h-full w-full space-y-5">
+            {/* 1. Perspective Explanation & Search */}
+            <div className="bg-emerald-50/70 border-2 border-emerald-300 rounded-2xl p-3 sm:p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+              <div>
+                <h3 className="font-extrabold text-base sm:text-xl text-emerald-950 flex items-center gap-2">
+                  <span>🔎 親屬稱謂智慧查詢與對照模式</span>
+                </h3>
+                <p className="text-xs sm:text-sm text-emerald-800 font-medium mt-1">
+                  從「<span className="font-black">{perspectiveMember.name}</span>」出發，點選下方任何一位家族成員，即可即時顯示精確稱謂、稱呼方式與推導鏈！
+                </p>
+              </div>
+
+              <div className="w-full md:w-auto">
+                <input
+                  type="text"
+                  value={kinshipSearchQuery}
+                  onChange={(e) => setKinshipSearchQuery(e.target.value)}
+                  placeholder="🔍 搜尋親戚姓名或稱謂..."
+                  className="w-full md:w-56 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-xs sm:text-sm font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* 2. Interactive Kinship Highlight Card */}
+            {(() => {
+              const target = members[kinshipTargetId] || members.brother || members.me;
+              const forwardKin = isVisitorPerspective
+                ? null
+                : calculateKinship(perspectiveId, target.id, members, relationships);
+              const reverseKin = isVisitorPerspective
+                ? null
+                : calculateKinship(target.id, perspectiveId, members, relationships);
+              const lunar = convertSolarToLunar(target.birthday, target.isAlive, target.passingDate);
+
+              return (
+                <div className="bg-white border-2 border-emerald-500 rounded-2xl p-4 sm:p-5 shadow-sm relative overflow-hidden">
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
+                    <div
+                      className={`w-18 h-18 sm:w-22 sm:h-22 rounded-full ${
+                        target.isAlive ? target.color : 'bg-stone-500'
+                      } text-white font-extrabold text-2xl flex items-center justify-center shrink-0 overflow-hidden border-4 border-emerald-100 shadow-xs`}
+                    >
+                      {target.photoUrl ? (
+                        <img src={target.photoUrl} alt={target.name} className="w-full h-full object-cover" />
+                      ) : (
+                        target.name.slice(-2)
+                      )}
+                    </div>
+
+                    <div className="flex-1 text-center sm:text-left min-w-0">
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                        <span className="text-xl sm:text-2xl font-black text-stone-900">
+                          {target.name}
+                        </span>
+                        {target.nickname && (
+                          <span className="text-xs px-2 py-0.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-300 font-extrabold">
+                            稱呼：{target.nickname}
+                          </span>
+                        )}
+                        {!target.isAlive && (
+                          <span className="text-xs px-2 py-0.5 rounded bg-stone-200 text-stone-700 font-bold">
+                            已歿
+                          </span>
+                        )}
+                      </div>
+
+                      {!isVisitorPerspective && forwardKin && reverseKin && (
+                        <div className="mt-2.5 p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex flex-col gap-1.5">
+                          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs sm:text-sm">
+                            <span className="text-stone-600 font-bold">
+                              「{perspectiveMember.name}」稱呼「{target.name}」為：
+                            </span>
+                            <span className="text-base sm:text-lg font-black text-emerald-800 bg-white px-3 py-0.5 rounded-full border border-emerald-300 shadow-2xs">
+                              {target.id === perspectiveId ? '本人 (自己)' : forwardKin.title}
+                            </span>
+                          </div>
+                          {target.id !== perspectiveId && (
+                            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs sm:text-sm text-stone-600">
+                              <span>對方稱呼您為：</span>
+                              <span className="font-extrabold text-stone-900 bg-white px-2.5 py-0.5 rounded-full border border-stone-200">
+                                {reverseKin.title}
+                              </span>
+                            </div>
+                          )}
+                          {forwardKin.path && target.id !== perspectiveId && (
+                            <div className="text-xs text-stone-500 font-medium mt-0.5 text-center sm:text-left">
+                              🧭 關係鏈推導：{forwardKin.path}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="mt-2.5 flex flex-wrap items-center justify-center sm:justify-start gap-3 text-xs sm:text-sm text-stone-600">
+                        <span>🎂 {target.birthday}</span>
+                        {lunar && (
+                          <span className="text-emerald-800 font-bold">
+                            {lunar.ganZhiYear}年 · 屬{lunar.zodiac} · {lunar.ageLabel}
+                          </span>
+                        )}
+                        <span>💼 {formatWorkDisplay(target.workStatus, target.workDetail)}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex sm:flex-col items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPersonFocusId(target.id);
+                          setActiveTab('person');
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 font-extrabold text-xs cursor-pointer shadow-2xs"
+                      >
+                        👤 人物模式
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('tree');
+                          setSelectedId(target.id);
+                          centerMemberInTree(target.id);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-extrabold text-xs cursor-pointer shadow-2xs"
+                      >
+                        🌳 族譜定位
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 3. Fast Relative Picker Grid */}
+            <div>
+              <h4 className="text-xs sm:text-sm font-black text-stone-800 mb-2.5 flex items-center gap-2">
+                <span>👇 點擊下列任一成員立即查看稱謂關聯：</span>
+              </h4>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                {Object.values(members)
+                  .filter((m) => {
+                    if (!kinshipSearchQuery.trim()) return true;
+                    const q = kinshipSearchQuery.toLowerCase();
+                    return (
+                      m.name.toLowerCase().includes(q) ||
+                      (m.nickname && m.nickname.toLowerCase().includes(q)) ||
+                      (m.roleLabel && m.roleLabel.toLowerCase().includes(q))
+                    );
+                  })
+                  .map((m) => {
+                    const kin = isVisitorPerspective
+                      ? null
+                      : calculateKinship(perspectiveId, m.id, members, relationships);
+                    const isSelected = kinshipTargetId === m.id;
+
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setKinshipTargetId(m.id)}
+                        className={`p-2 rounded-xl border-2 text-left transition cursor-pointer flex items-center gap-2 ${
+                          isSelected
+                            ? 'bg-emerald-50 border-emerald-600 ring-2 ring-emerald-500/30 shadow-xs'
+                            : 'bg-stone-50 hover:bg-white border-stone-200 hover:border-emerald-300'
+                        }`}
+                      >
+                        <div
+                          className={`w-8 h-8 rounded-full ${
+                            m.isAlive ? m.color : 'bg-stone-500'
+                          } text-white font-bold text-xs flex items-center justify-center shrink-0 overflow-hidden`}
+                        >
+                          {m.photoUrl ? (
+                            <img src={m.photoUrl} alt={m.name} className="w-full h-full object-cover" />
+                          ) : (
+                            m.name.slice(-2)
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-extrabold text-xs sm:text-sm text-stone-900 truncate">
+                            {m.name}
+                          </div>
+                          {kin && !isVisitorPerspective ? (
+                            <div className="text-[11px] font-extrabold text-emerald-800 truncate">
+                              {m.id === perspectiveId ? '本人' : kin.title}
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-stone-500 truncate">第{m.generation}代</div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+
+            {/* 4. Collapsible Complete Kinship Table */}
+            <div className="pt-3 border-t border-stone-200">
+              <button
+                type="button"
+                onClick={() => setIsKinshipMatrixOpen((prev) => !prev)}
+                className="w-full py-2 px-3 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-extrabold text-xs sm:text-sm flex items-center justify-between cursor-pointer transition"
+              >
+                <span>📋 {isKinshipMatrixOpen ? '收合' : '展開'}完整親屬稱謂對照一覽表 ({Object.keys(members).length} 人)</span>
+                <span>{isKinshipMatrixOpen ? '▲' : '▼'}</span>
+              </button>
+
+              {isKinshipMatrixOpen && (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-sm sm:text-base">
+                    <thead>
+                      <tr className="border-b-2 border-stone-200 text-stone-700 font-bold bg-stone-50">
+                        <th className="py-2.5 px-3">家族成員（英文／稱呼）</th>
+                        <th className="py-2.5 px-3">家族分支</th>
+                        <th className="py-2.5 px-3">工作 / 就學</th>
+                        {!isVisitorPerspective && (
+                          <>
+                            <th className="py-2.5 px-3">
+                              「<span className="text-emerald-700">{perspectiveMember.name}</span>」稱呼他
+                            </th>
+                            <th className="py-2.5 px-3">
+                              他稱呼「<span className="text-emerald-700">{perspectiveMember.name}</span>」
+                            </th>
                           </>
                         )}
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody className="divide-y divide-stone-200">
+                      {Object.values(members).map((target) => {
+                        const forward = isVisitorPerspective
+                          ? null
+                          : calculateKinship(perspectiveId, target.id, members, relationships);
+                        const reverse = isVisitorPerspective
+                          ? null
+                          : calculateKinship(target.id, perspectiveId, members, relationships);
+                        return (
+                          <tr
+                            key={target.id}
+                            onClick={() => {
+                              setSelectedId(target.id);
+                              setPersonFocusId(target.id);
+                              setIsPhotoZoomed(false);
+                              setIsDetailModalOpen(true);
+                            }}
+                            className="hover:bg-emerald-50/60 cursor-pointer transition"
+                          >
+                            <td className="py-2.5 px-3 font-bold flex items-center gap-2 text-stone-900">
+                              <span className={`w-3 h-3 rounded-full ${target.color}`}></span>
+                              <span>{target.name}</span>
+                              {target.nickname && (
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
+                                  {target.nickname}
+                                </span>
+                              )}
+                              {!target.isAlive && (
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-stone-200 text-stone-600">
+                                  已歿
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-xs sm:text-sm font-bold">
+                              {target.familySide === 'paternal' && (
+                                <span className="text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200">
+                                  🟦 父系 (第{target.generation}代)
+                                </span>
+                              )}
+                              {target.familySide === 'maternal' && (
+                                <span className="text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                                  🟧 母系 (第{target.generation}代)
+                                </span>
+                              )}
+                              {target.familySide === 'core' && (
+                                <span className="text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                  🟩 直系 (第{target.generation}代)
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-xs sm:text-sm font-semibold text-stone-700">
+                              {formatWorkDisplay(target.workStatus, target.workDetail)}
+                            </td>
+                            {!isVisitorPerspective && forward && reverse && (
+                              <>
+                                <td className="py-2.5 px-3 font-extrabold text-emerald-700">
+                                  {forward.title}
+                                </td>
+                                <td className="py-2.5 px-3 font-bold text-stone-800">{reverse.title}</td>
+                              </>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2437,24 +2962,47 @@ export function App() {
               </div>
             )}
 
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-stone-200">
-              <button
-                type="button"
-                onClick={() => {
-                  setPerspectiveId(selectedMember.id);
-                  setIsDetailModalOpen(false);
-                  centerMemberInTree(selectedMember.id);
-                }}
-                className="px-4 py-2.5 rounded-xl border-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-extrabold text-sm cursor-pointer"
-              >
-                🎯 設為稱謂視角（並置中）
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-stone-200">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    centerMemberInTree(selectedMember.id);
+                    setIsDetailModalOpen(false);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-extrabold text-xs sm:text-sm cursor-pointer flex items-center gap-1 shadow-2xs"
+                >
+                  🎯 在族譜置中
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPersonFocusId(selectedMember.id);
+                    setActiveTab('person');
+                    setIsDetailModalOpen(false);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 font-extrabold text-xs sm:text-sm cursor-pointer flex items-center gap-1 shadow-2xs"
+                >
+                  👤 人物模式
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPerspectiveId(selectedMember.id);
+                    setIsDetailModalOpen(false);
+                    centerMemberInTree(selectedMember.id);
+                  }}
+                  className="px-3.5 py-2 rounded-xl border border-stone-300 text-stone-700 hover:bg-stone-100 font-extrabold text-xs sm:text-sm cursor-pointer"
+                >
+                  👀 設為稱謂視角
+                </button>
+              </div>
 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setIsDetailModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-sm cursor-pointer"
+                  className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs sm:text-sm cursor-pointer"
                 >
                   關閉
                 </button>
@@ -2462,7 +3010,7 @@ export function App() {
                   <button
                     type="button"
                     onClick={handleOpenEditorFromModal}
-                    className="px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-extrabold text-sm shadow-sm cursor-pointer flex items-center gap-1.5"
+                    className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-extrabold text-xs sm:text-sm shadow-sm cursor-pointer flex items-center gap-1.5"
                   >
                     ✏️ 編輯個人資料
                   </button>
@@ -3859,8 +4407,25 @@ export function App() {
                 </div>
 
                 {firebaseError && (
-                  <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
-                    ⚠️ Firebase 錯誤訊息：{firebaseError}
+                  <div className="p-3.5 rounded-xl bg-red-50 border-2 border-red-200 text-red-800 text-sm font-medium space-y-2">
+                    <div className="font-extrabold flex items-center gap-1.5">
+                      <span>⚠️ Firebase 錯誤提示：</span>
+                      <span>{firebaseError}</span>
+                    </div>
+                    {(firebaseError.includes('does not exist') || firebaseError.includes('NOT_FOUND')) && (
+                      <p className="text-xs text-red-700 font-bold bg-white p-2.5 rounded-lg border border-red-300 leading-relaxed">
+                        👉 您的 Firebase 專案 (family-tree-7fc0c) 尚未建立 Firestore 資料庫！請點此前往{' '}
+                        <a
+                          href="https://console.firebase.google.com/project/family-tree-7fc0c/firestore"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-emerald-700 underline font-black"
+                        >
+                          Firebase 控制台 Firestore Database
+                        </a>{' '}
+                        點擊「<strong>建立資料庫 (Create database)</strong>」（選擇預設位置並以測試模式建立），建立完成後即可在此點擊「立即同步全家族資料」！
+                      </p>
+                    )}
                   </div>
                 )}
 
