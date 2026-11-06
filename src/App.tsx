@@ -249,6 +249,7 @@ export function App() {
   const dragStartRef = useRef({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 });
   const dragDistanceRef = useRef(0);
   const [focusedPulseId, setFocusedPulseId] = useState<MemberId | null>(null);
+  const touchPinchStartRef = useRef<{ dist: number; scale: number } | null>(null);
 
   // 7. State: Add Member Modal & Quick Add Dropdown
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -752,6 +753,38 @@ export function App() {
     if (isDraggingCanvas) {
       setIsDraggingCanvas(false);
     }
+  };
+
+  // Touch pinch-to-zoom handlers on mobile screens
+  const handleCanvasTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      touchPinchStartRef.current = { dist, scale: zoomScale };
+    } else {
+      touchPinchStartRef.current = null;
+    }
+  };
+
+  const handleCanvasTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 2 && touchPinchStartRef.current) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const ratio = dist / touchPinchStartRef.current.dist;
+      const nextScale = Math.min(
+        1.8,
+        Math.max(0.4, Number((touchPinchStartRef.current.scale * ratio).toFixed(2)))
+      );
+      setZoomScale(nextScale);
+    }
+  };
+
+  const handleCanvasTouchEnd = () => {
+    touchPinchStartRef.current = null;
   };
 
   const canEdit = role === 'admin' || role === 'editor';
@@ -1306,30 +1339,27 @@ export function App() {
   // =========================================================================
   if (!isUnlocked) {
     return (
-      <div className="min-h-screen bg-stone-100 flex flex-col items-center justify-center p-4">
-        <div className="bg-white border-2 border-stone-200 rounded-3xl max-w-md w-full p-8 shadow-xl space-y-6 text-center">
-          {/* Family Emblem */}
-          <div className="w-20 h-20 rounded-3xl bg-emerald-700 text-white flex items-center justify-center font-extrabold text-4xl shadow-md mx-auto">
-            {settings.logoText}
-          </div>
-
+      <div className="min-h-screen bg-stone-100 flex flex-col items-center justify-center p-3 sm:p-4">
+        <div className="bg-white border-2 border-stone-200 rounded-3xl max-w-md w-full p-5 sm:p-8 shadow-xl space-y-4 sm:space-y-6 text-center my-auto">
           <div>
-            <h1 className="font-extrabold text-3xl text-stone-900">{settings.title}</h1>
-            <p className="text-base text-stone-600 font-medium mt-2">
+            <h1 className="font-extrabold text-2xl sm:text-3xl text-stone-900 tracking-tight">
+              {settings.title}
+            </h1>
+            <p className="text-xs sm:text-sm text-stone-600 font-medium mt-1.5 leading-relaxed">
               🔒 為保護家族成員隱私，請輸入家族通行密碼進入查閱
             </p>
           </div>
 
           {loginError && (
-            <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm font-bold text-left leading-relaxed">
+            <div className="p-3 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs sm:text-sm font-bold text-left leading-relaxed">
               {loginError}
             </div>
           )}
 
           {/* Elder Passcode Form */}
-          <form onSubmit={handlePasscodeLoginSubmit} className="space-y-4 text-left">
+          <form onSubmit={handlePasscodeLoginSubmit} className="space-y-3.5 sm:space-y-4 text-left">
             <div>
-              <label className="block text-base font-extrabold text-stone-800 mb-2">
+              <label className="block text-sm sm:text-base font-extrabold text-stone-800 mb-1.5 sm:mb-2">
                 👵 家族成員通行密碼：
               </label>
               <input
@@ -1340,22 +1370,22 @@ export function App() {
                 placeholder="請輸入家族通行密碼"
                 value={loginPasscodeInput}
                 onChange={(e) => setLoginPasscodeInput(e.target.value)}
-                className="w-full px-4 py-3.5 rounded-2xl bg-stone-50 border-2 border-stone-300 text-xl font-extrabold text-center tracking-widest text-stone-900 focus:outline-none focus:border-emerald-600"
+                className="w-full px-4 py-2.5 sm:py-3.5 rounded-2xl bg-stone-50 border-2 border-stone-300 text-lg sm:text-xl font-extrabold text-center tracking-widest text-stone-900 focus:outline-none focus:border-emerald-600"
               />
             </div>
 
             <button
               type="submit"
-              className="w-full py-3.5 rounded-2xl bg-emerald-700 hover:bg-emerald-600 text-white font-extrabold text-lg shadow-md transition cursor-pointer"
+              className="w-full py-3 sm:py-3.5 rounded-2xl bg-emerald-700 hover:bg-emerald-600 text-white font-extrabold text-base sm:text-lg shadow-md transition cursor-pointer"
             >
-              🔓 進入家族族譜（唯讀查閱）
+              🔓 進入家族族譜
             </button>
           </form>
 
           {/* Divider */}
-          <div className="relative flex py-1 items-center">
+          <div className="relative flex py-0.5 items-center">
             <div className="flex-grow border-t border-stone-200"></div>
-            <span className="flex-shrink mx-3 text-xs font-bold text-stone-400">
+            <span className="flex-shrink mx-2 text-[11px] sm:text-xs font-bold text-stone-400">
               管理員維護專區（限白名單 Gmail）
             </span>
             <div className="flex-grow border-t border-stone-200"></div>
@@ -1366,7 +1396,7 @@ export function App() {
             <button
               type="button"
               onClick={handleGoogleAdminLogin}
-              className="w-full py-3 px-4 rounded-2xl bg-white hover:bg-stone-50 text-stone-800 border-2 border-stone-300 font-extrabold text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs"
+              className="w-full py-2.5 sm:py-3 px-4 rounded-2xl bg-white hover:bg-stone-50 text-stone-800 border-2 border-stone-300 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs"
             >
               <span>管理員登入</span>
             </button>
@@ -1643,11 +1673,11 @@ export function App() {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-stone-100 text-stone-900 overflow-hidden select-none">
-      {/* Fixed 3-Row Top Navigation & Elder-Friendly Control Bar */}
-      <header className="sticky top-0 z-40 bg-white border-b-2 border-stone-200 px-3 sm:px-6 py-2 shrink-0 shadow-xs">
+      {/* Fixed Top Navigation & Elder-Friendly Control Bar (Desktop 2-Row / Mobile 3-Row) */}
+      <header className="sticky top-0 z-40 bg-white border-b-2 border-stone-200 px-3 sm:px-6 py-1.5 sm:py-2 shrink-0 shadow-xs">
         {/* ROW 1: Left Title & Right Font Size + Welcome + Logout (Parallel with Title) */}
         <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-2">
-          {/* Left: Title & Subtitle (已移除最左邊的「族」代表字，統一由系統設定編輯) */}
+          {/* Left: Title & Subtitle (已移除代表字「族」，直接顯示標題) */}
           <div className="min-w-0">
             <h1 className="font-extrabold text-base sm:text-xl text-stone-900 tracking-tight leading-tight truncate">
               {settings.title}
@@ -1690,7 +1720,7 @@ export function App() {
 
             {/* Greeting for Gmail-authenticated family member (hidden on small mobile) */}
             {welcomeDisplayName && (
-              <span className="text-xs sm:text-sm font-extrabold text-emerald-800 px-1 truncate max-w-[100px] sm:max-w-none hidden md:inline">
+              <span className="text-xs sm:text-sm font-extrabold text-emerald-800 px-1 truncate max-w-[100px] sm:max-w-none hidden lg:inline">
                 歡迎 {welcomeDisplayName},
               </span>
             )}
@@ -1722,52 +1752,55 @@ export function App() {
           </div>
         </div>
 
-        {/* ROW 2: 3-Mode Switcher: 🌳 族譜模式 / 👤 人物模式 / 🔎 稱謂模式 */}
-        <div className="max-w-[1600px] mx-auto mt-1.5 pt-1.5 border-t border-stone-200 flex items-center justify-center gap-1.5 sm:gap-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab('tree')}
-            className={`flex-1 sm:flex-initial text-center px-3 sm:px-4 py-1.5 rounded-xl text-xs sm:text-sm font-extrabold transition cursor-pointer flex items-center justify-center gap-1.5 ${
-              activeTab === 'tree'
-                ? 'bg-emerald-700 text-white shadow-xs'
-                : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-200'
-            }`}
-          >
-            <span>🌳 族譜模式</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('person');
-              setPersonFocusId(selectedId || 'me');
-            }}
-            className={`flex-1 sm:flex-initial text-center px-3 sm:px-4 py-1.5 rounded-xl text-xs sm:text-sm font-extrabold transition cursor-pointer flex items-center justify-center gap-1.5 ${
-              activeTab === 'person'
-                ? 'bg-emerald-700 text-white shadow-xs'
-                : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-200'
-            }`}
-          >
-            <span>👤 人物模式</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('kinship')}
-            className={`flex-1 sm:flex-initial text-center px-3 sm:px-4 py-1.5 rounded-xl text-xs sm:text-sm font-extrabold transition cursor-pointer flex items-center justify-center gap-1.5 ${
-              activeTab === 'kinship'
-                ? 'bg-emerald-700 text-white shadow-xs'
-                : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-200'
-            }`}
-          >
-            <span>🔎 稱謂模式</span>
-          </button>
-        </div>
+        {/* ========================================================================= */}
+        {/* DESKTOP ROW 2 (md:flex): Single 2nd row for desktop (模式 + 視角/編輯/親屬 + 總覽/父系/母系) */}
+        {/* ========================================================================= */}
+        <div className="hidden md:flex max-w-[1600px] mx-auto mt-2 pt-1.5 border-t border-stone-200 items-center justify-between gap-3">
+          {/* Left: 3-Modes + Perspective + Edit + Quick Add */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            {/* 3 Modes Switcher */}
+            <div className="flex items-center bg-stone-100 p-0.5 rounded-xl border border-stone-300 text-xs">
+              <button
+                type="button"
+                onClick={() => setActiveTab('tree')}
+                className={`px-3 py-1 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-1 shrink-0 ${
+                  activeTab === 'tree'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
+              >
+                <span>🌳 族譜模式</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('person');
+                  setPersonFocusId(selectedId || 'me');
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-1 shrink-0 ${
+                  activeTab === 'person'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
+              >
+                <span>👤 人物模式</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('kinship')}
+                className={`px-3 py-1 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-1 shrink-0 ${
+                  activeTab === 'kinship'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
+              >
+                <span>🔎 稱謂模式</span>
+              </button>
+            </div>
 
-        {/* ROW 3: Perspective + Edit + Quick Add (Left) & Branch Switcher (Right) */}
-        <div className="max-w-[1600px] mx-auto mt-1.5 pt-1.5 border-t border-stone-200 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Perspective Selector & Center Button */}
             <div className="flex items-center gap-1 bg-emerald-50 border border-emerald-300 rounded-lg px-2 py-1 shrink-0">
-              <span className="text-[11px] sm:text-xs text-emerald-900 font-bold shrink-0">👀 視角:</span>
+              <span className="text-xs text-emerald-900 font-bold shrink-0">👀 視角:</span>
               <select
                 value={perspectiveId}
                 onChange={(e) => {
@@ -1780,33 +1813,32 @@ export function App() {
                     centerMemberInTree(nextId);
                   }
                 }}
-                className="bg-transparent text-xs sm:text-sm font-extrabold text-emerald-800 focus:outline-none cursor-pointer max-w-[100px] sm:max-w-none truncate"
+                className="bg-transparent text-xs font-extrabold text-emerald-800 focus:outline-none cursor-pointer max-w-[130px] truncate"
               >
                 <option value="visitor">訪客</option>
                 {Object.values(members).map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name}
-                    {m.nickname ? ` (${m.nickname})` : ''}
+                    {m.name}{m.nickname ? ` (${m.nickname})` : ''}
                   </option>
                 ))}
               </select>
               <button
                 type="button"
                 onClick={() => centerMemberInTree(perspectiveId === 'visitor' ? 'pGrandpa' : perspectiveId)}
-                className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white font-bold transition cursor-pointer shrink-0"
+                className="text-xs px-1.5 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white font-bold transition cursor-pointer shrink-0"
                 title="在族譜置中目前視角"
               >
                 🎯
               </button>
             </div>
 
-            {/* Edit Selected Member + Quick Add Dropdown */}
+            {/* Edit + Quick Add Dropdown */}
             {canEdit && (
               <div className="flex items-center gap-1 shrink-0 relative">
                 <button
                   type="button"
                   onClick={() => setIsEditorDrawerOpen(true)}
-                  className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-xs sm:text-sm font-extrabold shadow-2xs transition cursor-pointer shrink-0"
+                  className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-extrabold shadow-2xs transition cursor-pointer shrink-0"
                 >
                   ✏️ 編輯
                 </button>
@@ -1870,13 +1902,13 @@ export function App() {
             )}
           </div>
 
-          {/* Right side: Generation Branch switcher (總覽 / 父系 / 母系) */}
+          {/* Right: Branch Switcher */}
           {activeTab === 'tree' && (
-            <div className="flex items-center gap-1 bg-stone-100 p-0.5 rounded-lg border border-stone-300 text-[11px] shrink-0">
+            <div className="flex items-center gap-1 bg-stone-100 p-0.5 rounded-lg border border-stone-300 text-xs shrink-0">
               <button
                 type="button"
                 onClick={() => setBranchView('both')}
-                className={`px-1.5 sm:px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded text-xs font-bold transition cursor-pointer ${
                   branchView === 'both'
                     ? 'bg-emerald-700 text-white shadow-2xs'
                     : 'text-stone-700 hover:bg-stone-200'
@@ -1887,7 +1919,7 @@ export function App() {
               <button
                 type="button"
                 onClick={() => setBranchView('paternal')}
-                className={`px-1.5 sm:px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded text-xs font-bold transition cursor-pointer ${
                   branchView === 'paternal'
                     ? 'bg-sky-700 text-white shadow-2xs'
                     : 'text-stone-700 hover:bg-stone-200'
@@ -1898,7 +1930,198 @@ export function App() {
               <button
                 type="button"
                 onClick={() => setBranchView('maternal')}
-                className={`px-1.5 sm:px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded text-xs font-bold transition cursor-pointer ${
+                  branchView === 'maternal'
+                    ? 'bg-amber-700 text-white shadow-2xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
+              >
+                母系
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ========================================================================= */}
+        {/* MOBILE ROW 2 (md:hidden): 3-Mode Switcher with compact non-wrapping text */}
+        {/* ========================================================================= */}
+        <div className="md:hidden max-w-[1600px] mx-auto mt-1 pt-1 border-t border-stone-200 flex items-center justify-between gap-1">
+          <button
+            type="button"
+            onClick={() => setActiveTab('tree')}
+            className={`flex-1 text-center px-1 py-1 rounded-lg text-[11px] font-extrabold transition cursor-pointer whitespace-nowrap leading-tight ${
+              activeTab === 'tree'
+                ? 'bg-emerald-700 text-white shadow-xs'
+                : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-200'
+            }`}
+          >
+            <span>🌳 族譜模式</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('person');
+              setPersonFocusId(selectedId || 'me');
+            }}
+            className={`flex-1 text-center px-1 py-1 rounded-lg text-[11px] font-extrabold transition cursor-pointer whitespace-nowrap leading-tight ${
+              activeTab === 'person'
+                ? 'bg-emerald-700 text-white shadow-xs'
+                : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-200'
+            }`}
+          >
+            <span>👤 人物模式</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('kinship')}
+            className={`flex-1 text-center px-1 py-1 rounded-lg text-[11px] font-extrabold transition cursor-pointer whitespace-nowrap leading-tight ${
+              activeTab === 'kinship'
+                ? 'bg-emerald-700 text-white shadow-xs'
+                : 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-200'
+            }`}
+          >
+            <span>🔎 稱謂模式</span>
+          </button>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* MOBILE ROW 3 (md:hidden): Perspective + Edit + Quick Add (Left) & Branch (Right) */}
+        {/* ========================================================================= */}
+        <div className="md:hidden max-w-[1600px] mx-auto mt-1 pt-1 border-t border-stone-200 flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Perspective Selector & Center Button */}
+            <div className="flex items-center gap-0.5 bg-emerald-50 border border-emerald-300 rounded-lg px-1.5 py-0.5 shrink-0">
+              <span className="text-[10px] text-emerald-900 font-bold shrink-0">👀</span>
+              <select
+                value={perspectiveId}
+                onChange={(e) => {
+                  const nextId = e.target.value;
+                  setPerspectiveId(nextId);
+                  if (nextId === 'visitor') {
+                    centerMemberInTree('pGrandpa');
+                  } else if (members[nextId]) {
+                    setSelectedId(nextId);
+                    centerMemberInTree(nextId);
+                  }
+                }}
+                className="bg-transparent text-[11px] font-extrabold text-emerald-800 focus:outline-none cursor-pointer max-w-[85px] truncate"
+              >
+                <option value="visitor">訪客</option>
+                {Object.values(members).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}{m.nickname ? ` (${m.nickname})` : ''}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => centerMemberInTree(perspectiveId === 'visitor' ? 'pGrandpa' : perspectiveId)}
+                className="text-[9px] px-1 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white font-bold transition cursor-pointer shrink-0"
+                title="在族譜置中目前視角"
+              >
+                🎯
+              </button>
+            </div>
+
+            {/* Edit Selected Member + Quick Add Dropdown */}
+            {canEdit && (
+              <div className="flex items-center gap-1 shrink-0 relative">
+                <button
+                  type="button"
+                  onClick={() => setIsEditorDrawerOpen(true)}
+                  className="px-2 py-0.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-extrabold shadow-2xs transition cursor-pointer shrink-0"
+                >
+                  ✏️ 編輯
+                </button>
+
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsQuickAddMenuOpen((prev) => !prev)}
+                    className="px-1.5 py-0.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-[11px] font-extrabold transition cursor-pointer flex items-center gap-0.5"
+                  >
+                    <span>➕ 親屬</span>
+                    <span className="text-[8px]">{isQuickAddMenuOpen ? '▲' : '▼'}</span>
+                  </button>
+
+                  {isQuickAddMenuOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsQuickAddMenuOpen(false)}
+                      />
+                      <div className="absolute left-0 mt-1 w-52 bg-white border-2 border-emerald-300 rounded-2xl shadow-xl p-2 z-50 space-y-1">
+                        <div className="text-[11px] font-extrabold text-emerald-950 px-2 py-1 border-b border-stone-100">
+                          ➕ 為「{selectedMember.name}」新增：
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsQuickAddMenuOpen(false);
+                            openAddMemberModal(selectedId, 'sibling');
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 rounded-lg bg-sky-50/70 hover:bg-sky-100 text-sky-900 border border-sky-200 text-xs font-bold transition cursor-pointer"
+                        >
+                          + 兄弟姐妹 (同輩)
+                        </button>
+                        <button
+                          type="button"
+                          disabled={Boolean(getSpouseOf(selectedId, relationships))}
+                          onClick={() => {
+                            setIsQuickAddMenuOpen(false);
+                            openAddMemberModal(selectedId, 'spouse');
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 rounded-lg bg-pink-50/70 hover:bg-pink-100 text-pink-900 border border-pink-200 text-xs font-bold transition cursor-pointer disabled:opacity-40"
+                        >
+                          + 配偶 (伴侶)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsQuickAddMenuOpen(false);
+                            openAddMemberModal(selectedId, 'child');
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 rounded-lg bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 text-xs font-bold transition cursor-pointer"
+                        >
+                          + 子女 (下一代)
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right side: Generation Branch switcher (總覽 / 父系 / 母系) */}
+          {activeTab === 'tree' && (
+            <div className="flex items-center gap-0.5 bg-stone-100 p-0.5 rounded-lg border border-stone-300 text-[10px] shrink-0">
+              <button
+                type="button"
+                onClick={() => setBranchView('both')}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition cursor-pointer ${
+                  branchView === 'both'
+                    ? 'bg-emerald-700 text-white shadow-2xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
+              >
+                總覽
+              </button>
+              <button
+                type="button"
+                onClick={() => setBranchView('paternal')}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition cursor-pointer ${
+                  branchView === 'paternal'
+                    ? 'bg-sky-700 text-white shadow-2xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
+              >
+                父系
+              </button>
+              <button
+                type="button"
+                onClick={() => setBranchView('maternal')}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition cursor-pointer ${
                   branchView === 'maternal'
                     ? 'bg-amber-700 text-white shadow-2xs'
                     : 'text-stone-700 hover:bg-stone-200'
@@ -1927,35 +2150,26 @@ export function App() {
 
       {/* Main Content Layout (佔比約 4/5，滿版彈性擴展) */}
       <main className="max-w-[1600px] mx-auto w-full flex-1 p-2 sm:p-4 flex flex-col min-h-0 overflow-hidden">
-        {/* TAB 1: Grab-to-Pan Family Tree Canvas (自適應高寬滿版 + Zoom 控制 + 手機直式排版) */}
+        {/* TAB 1: Grab-to-Pan Family Tree Canvas (自適應高寬滿版 + Zoom 控制 + 支援兩指縮放) */}
         {activeTab === 'tree' && (
-          <div
-            ref={treeViewportRef}
-            onMouseDown={handleCanvasMouseDown}
-            onMouseMove={handleCanvasMouseMove}
-            onMouseUp={handleCanvasMouseUpOrLeave}
-            onMouseLeave={handleCanvasMouseUpOrLeave}
-            className={`bg-white border-2 border-stone-200 rounded-2xl p-2 sm:p-6 overflow-auto shadow-xs select-none flex-1 h-full w-full relative ${
-              isDraggingCanvas ? 'cursor-grabbing' : 'cursor-grab'
-            }`}
-          >
-            {/* Floating Zoom Controls (+ / - / ⛶ 100%) */}
-            <div className="sticky bottom-3 float-right z-20 flex items-center gap-1.5 bg-white/95 backdrop-blur-md px-2.5 py-1.5 rounded-2xl border-2 border-stone-300 shadow-lg">
+          <div className="relative flex-1 h-full w-full min-h-0 bg-white border-2 border-stone-200 rounded-2xl shadow-xs overflow-hidden flex flex-col">
+            {/* Fixed Zoom Controls at Top-Left of the Family Tree Canvas Container */}
+            <div className="absolute top-2.5 left-2.5 z-30 flex items-center gap-1 bg-white/95 backdrop-blur-md px-2 py-1 rounded-xl border border-stone-300 shadow-md pointer-events-auto">
               <button
                 type="button"
                 onClick={() => setZoomScale((s) => Math.max(0.4, Number((s - 0.15).toFixed(2))))}
-                className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-stone-100 hover:bg-stone-200 active:scale-95 text-stone-800 font-extrabold text-sm sm:text-base flex items-center justify-center transition cursor-pointer shadow-2xs"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-stone-100 hover:bg-stone-200 active:scale-95 text-stone-800 font-extrabold text-sm sm:text-base flex items-center justify-center transition cursor-pointer shadow-2xs"
                 title="縮小族譜"
               >
                 −
               </button>
-              <span className="text-[11px] sm:text-xs font-black text-stone-700 min-w-[38px] sm:min-w-[42px] text-center select-none">
+              <span className="text-[11px] sm:text-xs font-black text-stone-700 min-w-[36px] sm:min-w-[42px] text-center select-none">
                 {Math.round(zoomScale * 100)}%
               </span>
               <button
                 type="button"
                 onClick={() => setZoomScale((s) => Math.min(1.8, Number((s + 0.15).toFixed(2))))}
-                className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-stone-100 hover:bg-stone-200 active:scale-95 text-stone-800 font-extrabold text-sm sm:text-base flex items-center justify-center transition cursor-pointer shadow-2xs"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-stone-100 hover:bg-stone-200 active:scale-95 text-stone-800 font-extrabold text-sm sm:text-base flex items-center justify-center transition cursor-pointer shadow-2xs"
                 title="放大族譜"
               >
                 ＋
@@ -1963,7 +2177,7 @@ export function App() {
               <button
                 type="button"
                 onClick={() => setZoomScale(1)}
-                className="px-2 h-7 sm:h-8 rounded-xl bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-800 border border-emerald-300 font-bold text-[11px] sm:text-xs flex items-center justify-center transition cursor-pointer shadow-2xs"
+                className="px-2 h-7 sm:h-8 rounded-lg bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-800 border border-emerald-300 font-bold text-[11px] sm:text-xs flex items-center justify-center transition cursor-pointer shadow-2xs"
                 title="重設縮放 100%"
               >
                 ⛶ 100%
@@ -1971,13 +2185,26 @@ export function App() {
             </div>
 
             <div
-              style={{
-                transform: `scale(${zoomScale})`,
-                transformOrigin: 'top center',
-                transition: 'transform 0.15s ease-out'
-              }}
-              className="w-max min-w-full mx-auto flex flex-col items-center space-y-6 py-4 px-4 sm:px-8"
+              ref={treeViewportRef}
+              onMouseDown={handleCanvasMouseDown}
+              onMouseMove={handleCanvasMouseMove}
+              onMouseUp={handleCanvasMouseUpOrLeave}
+              onMouseLeave={handleCanvasMouseUpOrLeave}
+              onTouchStart={handleCanvasTouchStart}
+              onTouchMove={handleCanvasTouchMove}
+              onTouchEnd={handleCanvasTouchEnd}
+              className={`p-2 sm:p-6 overflow-auto select-none flex-1 h-full w-full relative ${
+                isDraggingCanvas ? 'cursor-grabbing' : 'cursor-grab'
+              }`}
             >
+              <div
+                style={{
+                  transform: `scale(${zoomScale})`,
+                  transformOrigin: 'top center',
+                  transition: 'transform 0.15s ease-out'
+                }}
+                className="w-max min-w-full mx-auto flex flex-col items-center space-y-6 py-4 px-4 sm:px-8"
+              >
               {/* ================= GENERATION 1 ================= */}
               {branchView === 'both' && (
                 <div className="flex flex-col items-center">
@@ -2188,6 +2415,7 @@ export function App() {
                 </div>
               </div>
             </div>
+          </div>
           </div>
         )}
 
