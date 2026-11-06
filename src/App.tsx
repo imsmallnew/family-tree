@@ -6,6 +6,7 @@ import {
   TAIWAN_CITIES
 } from './data/initialData';
 import {
+  FamilyRegistryItem,
   FamilySettings,
   FamilySide,
   FirebaseConfigInput,
@@ -16,10 +17,13 @@ import {
   WorkStatus
 } from './types';
 import {
+  createNewFamily,
   deleteMemberFromFirestore,
   forceSyncAllToFirestore,
+  getActiveFamilyId,
   getSavedFirebaseConfig,
   initFirebaseConnection,
+  listRegisteredFamilies,
   saveFirebaseConfigToStorage,
   saveMemberToFirestore,
   saveRelationshipsToFirestore,
@@ -95,15 +99,31 @@ service cloud.firestore {
   }
 }`;
 
-function mergeWithInitialMembers(
-  raw: Record<string, Partial<Member>>
+const activeFamilyId = getActiveFamilyId();
+const getFamilyStorageKey = (key: string) =>
+  activeFamilyId === 'default' ? key : `${key}_${activeFamilyId}`;
+
+function mergeWithFamilyMembers(
+  raw: Record<string, Partial<Member>> | null | undefined,
+  familyId: string = activeFamilyId
 ): Record<MemberId, Member> {
+  if (familyId !== 'default') {
+    const res: Record<MemberId, Member> = {};
+    if (raw) {
+      Object.keys(raw).forEach((id) => {
+        if (raw[id] && (raw[id] as Member).name) {
+          res[id] = raw[id] as Member;
+        }
+      });
+    }
+    return res;
+  }
   const result: Record<MemberId, Member> = { ...INITIAL_MEMBERS };
   if (raw) {
     Object.keys(raw).forEach((id) => {
       if (result[id]) {
         result[id] = { ...result[id], ...raw[id] };
-      } else if (raw[id] && raw[id]?.name) {
+      } else if (raw[id] && (raw[id] as Member)?.name) {
         result[id] = raw[id] as Member;
       }
     });
@@ -111,7 +131,15 @@ function mergeWithInitialMembers(
   return result;
 }
 
-function mergeWithInitialRelationships(saved: Relationship[]): Relationship[] {
+function mergeWithFamilyRelationships(
+  saved: Relationship[] | null | undefined,
+  familyId: string = activeFamilyId
+): Relationship[] {
+  if (familyId !== 'default') {
+    return Array.isArray(saved)
+      ? saved.filter((r) => r && r.fromId && r.toId && r.type)
+      : [];
+  }
   const map = new Map<string, Relationship>();
   INITIAL_RELATIONSHIPS.forEach((r) => {
     map.set(`${r.fromId}_${r.toId}_${r.type}`, r);
@@ -130,7 +158,7 @@ export function App() {
   // 1. State: Family Settings (Editable Title + Passcode + Authorized Gmail Whitelist)
   const [settings, setSettings] = useState<FamilySettings>(() => {
     try {
-      const saved = localStorage.getItem(LOCAL_SETTINGS_KEY);
+      const saved = localStorage.getItem(getFamilyStorageKey(LOCAL_SETTINGS_KEY));
       return saved
         ? { ...DEFAULT_FAMILY_SETTINGS, ...JSON.parse(saved) }
         : DEFAULT_FAMILY_SETTINGS;
@@ -153,11 +181,11 @@ export function App() {
   // 2. State: Entry Gate Authentication (Passcode + Remember Prompt + Google Gmail Auth)
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
     try {
-      const savedPass = localStorage.getItem(LOCAL_REMEMBERED_PASSCODE_KEY);
+      const savedPass = localStorage.getItem(getFamilyStorageKey(LOCAL_REMEMBERED_PASSCODE_KEY));
       if (savedPass && (savedPass === settings.familyPasscode || savedPass === '8888' || savedPass === '888888')) {
         return true;
       }
-      const savedSession = localStorage.getItem(LOCAL_AUTH_SESSION_KEY);
+      const savedSession = localStorage.getItem(getFamilyStorageKey(LOCAL_AUTH_SESSION_KEY));
       if (savedSession) {
         return true;
       }
@@ -196,19 +224,19 @@ export function App() {
   // 3. State: Members & Relationships Data
   const [members, setMembers] = useState<Record<MemberId, Member>>(() => {
     try {
-      const saved = localStorage.getItem(LOCAL_MEMBERS_KEY);
-      return saved ? mergeWithInitialMembers(JSON.parse(saved)) : INITIAL_MEMBERS;
+      const saved = localStorage.getItem(getFamilyStorageKey(LOCAL_MEMBERS_KEY));
+      return saved ? mergeWithFamilyMembers(JSON.parse(saved), activeFamilyId) : (activeFamilyId === 'default' ? INITIAL_MEMBERS : {});
     } catch {
-      return INITIAL_MEMBERS;
+      return activeFamilyId === 'default' ? INITIAL_MEMBERS : {};
     }
   });
 
   const [relationships, setRelationships] = useState<Relationship[]>(() => {
     try {
-      const saved = localStorage.getItem(LOCAL_RELS_KEY);
-      return saved ? mergeWithInitialRelationships(JSON.parse(saved)) : INITIAL_RELATIONSHIPS;
+      const saved = localStorage.getItem(getFamilyStorageKey(LOCAL_RELS_KEY));
+      return saved ? mergeWithFamilyRelationships(JSON.parse(saved), activeFamilyId) : (activeFamilyId === 'default' ? INITIAL_RELATIONSHIPS : []);
     } catch {
-      return INITIAL_RELATIONSHIPS;
+      return activeFamilyId === 'default' ? INITIAL_RELATIONSHIPS : [];
     }
   });
 
@@ -231,7 +259,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<MemberId>('me');
   const [role, setRole] = useState<RoleType>(() => {
     try {
-      const savedRole = localStorage.getItem(LOCAL_USER_ROLE_KEY);
+      const savedRole = localStorage.getItem(getFamilyStorageKey(LOCAL_USER_ROLE_KEY));
       if (savedRole === 'admin' || savedRole === 'viewer') return savedRole;
     } catch {}
     return 'viewer';
@@ -243,7 +271,7 @@ export function App() {
 
   useEffect(() => {
     if (isUnlocked) {
-      localStorage.setItem(LOCAL_USER_ROLE_KEY, role);
+      localStorage.setItem(getFamilyStorageKey(LOCAL_USER_ROLE_KEY), role);
     }
   }, [role, isUnlocked]);
 
@@ -285,13 +313,29 @@ export function App() {
     lineId: '',
     fbUrl: '',
     photoUrl: '',
-    bio: ''
+    bio: '',
+    externalTreeName: '',
+    externalTreeUrl: ''
   });
 
-  // 8. State: Firebase Connection & Unified System Settings Modal
+  // 8. State: Firebase Connection, Multi-Family & Unified System Settings Modal
   const [firebaseConnected, setFirebaseConnected] = useState(false);
   const [firebaseError, setFirebaseError] = useState<string | null>(null);
-  const [systemSettingsTab, setSystemSettingsTab] = useState<'security' | 'firebase'>('security');
+  const [systemSettingsTab, setSystemSettingsTab] = useState<'security' | 'multiFamily' | 'firebase'>('security');
+  const [newFamilyIdInput, setNewFamilyIdInput] = useState('');
+  const [newFamilyTitleInput, setNewFamilyTitleInput] = useState('');
+  const [newFamilyPasscodeInput, setNewFamilyPasscodeInput] = useState('888888');
+  const [newFamilyAdminEmailInput, setNewFamilyAdminEmailInput] = useState('');
+  const [newFamilyAncestorInput, setNewFamilyAncestorInput] = useState('');
+  const [isCreatingFamily, setIsCreatingFamily] = useState(false);
+  const [createdFamilyResult, setCreatedFamilyResult] = useState<{
+    url: string;
+    familyId: string;
+    title: string;
+  } | null>(null);
+  const [registeredFamiliesList, setRegisteredFamiliesList] = useState<FamilyRegistryItem[]>([]);
+  const [isLoadingFamiliesList, setIsLoadingFamiliesList] = useState(false);
+
   const [firebaseConfigDraft, setFirebaseConfigDraft] = useState<FirebaseConfigInput>(() => {
     return (
       getSavedFirebaseConfig() || {
@@ -342,21 +386,24 @@ export function App() {
     if (members[selectedId]) {
       setFormData(members[selectedId]);
     } else {
-      setSelectedId('me');
+      const firstId = Object.keys(members)[0];
+      if (firstId) {
+        setSelectedId(firstId);
+      }
     }
   }, [selectedId, members]);
 
   // Save to localStorage as backup
   useEffect(() => {
-    localStorage.setItem(LOCAL_MEMBERS_KEY, JSON.stringify(members));
+    localStorage.setItem(getFamilyStorageKey(LOCAL_MEMBERS_KEY), JSON.stringify(members));
   }, [members]);
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_RELS_KEY, JSON.stringify(relationships));
+    localStorage.setItem(getFamilyStorageKey(LOCAL_RELS_KEY), JSON.stringify(relationships));
   }, [relationships]);
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(settings));
+    localStorage.setItem(getFamilyStorageKey(LOCAL_SETTINGS_KEY), JSON.stringify(settings));
     setPasscodeDraft(settings.familyPasscode || '8888');
     setTitleDraft(settings.title || '家族數位族譜');
     setSubtitleDraft(settings.subtitle || '');
@@ -367,7 +414,7 @@ export function App() {
 
   // Re-verify remembered passcode or auth session
   useEffect(() => {
-    const savedPass = localStorage.getItem(LOCAL_REMEMBERED_PASSCODE_KEY);
+    const savedPass = localStorage.getItem(getFamilyStorageKey(LOCAL_REMEMBERED_PASSCODE_KEY));
     if (savedPass && (savedPass === settings.familyPasscode || savedPass === '8888' || savedPass === '888888')) {
       setIsUnlocked(true);
     }
@@ -385,21 +432,22 @@ export function App() {
           setFirebaseConnected(true);
           setFirebaseError(null);
           try {
-            await seedFirestoreIfEmpty(members, relationships, settings);
+            await seedFirestoreIfEmpty(members, relationships, settings, activeFamilyId);
           } catch (e) {
             console.warn('Initial Firestore sync warning:', e);
           }
           unsubscribeData = subscribeToFamilyData(
-            (remoteMembers) => setMembers(mergeWithInitialMembers(remoteMembers)),
-            (remoteRels) => setRelationships(mergeWithInitialRelationships(remoteRels)),
+            (remoteMembers) => setMembers(mergeWithFamilyMembers(remoteMembers, activeFamilyId)),
+            (remoteRels) => setRelationships(mergeWithFamilyRelationships(remoteRels, activeFamilyId)),
             (remoteSettings) => setSettings(remoteSettings),
-            (errMsg) => setFirebaseError(errMsg)
+            (errMsg) => setFirebaseError(errMsg),
+            activeFamilyId
           );
           unsubscribeAuth = subscribeToAuthUser((email, displayName) => {
             setCurrentUserEmail(email);
             setCurrentUserName(displayName);
             if (email) {
-              localStorage.setItem(LOCAL_AUTH_SESSION_KEY, 'google');
+              localStorage.setItem(getFamilyStorageKey(LOCAL_AUTH_SESSION_KEY), 'google');
               setIsUnlocked(true);
             }
           });
@@ -459,7 +507,7 @@ export function App() {
       setRole('viewer');
       setPerspectiveId('visitor');
       setPendingPasscodeToRemember(cleanInput);
-      localStorage.setItem(LOCAL_AUTH_SESSION_KEY, 'passcode');
+      localStorage.setItem(getFamilyStorageKey(LOCAL_AUTH_SESSION_KEY), 'passcode');
       // Show prompt asking elder if they want to remember the passcode for auto-login next time!
       setShowRememberPrompt(true);
     } else {
@@ -468,12 +516,12 @@ export function App() {
   };
 
   const handleConfirmRememberPasscode = (remember: boolean) => {
-    localStorage.setItem(LOCAL_AUTH_SESSION_KEY, 'passcode');
+    localStorage.setItem(getFamilyStorageKey(LOCAL_AUTH_SESSION_KEY), 'passcode');
     if (remember) {
-      localStorage.setItem(LOCAL_REMEMBERED_PASSCODE_KEY, pendingPasscodeToRemember);
+      localStorage.setItem(getFamilyStorageKey(LOCAL_REMEMBERED_PASSCODE_KEY), pendingPasscodeToRemember);
       showToast('✅ 已在此裝置記住密碼，下次開啟將直接進入族譜！');
     } else {
-      localStorage.removeItem(LOCAL_REMEMBERED_PASSCODE_KEY);
+      localStorage.removeItem(getFamilyStorageKey(LOCAL_REMEMBERED_PASSCODE_KEY));
     }
     setRole('viewer');
     setPerspectiveId('visitor');
@@ -504,8 +552,8 @@ export function App() {
         await forceSyncAllToFirestore(members, relationships, updatedSettings).catch(() => {});
         setLoginError(null);
         setRole('admin');
-        localStorage.setItem(LOCAL_AUTH_SESSION_KEY, 'google');
-        localStorage.setItem(LOCAL_USER_ROLE_KEY, 'admin');
+        localStorage.setItem(getFamilyStorageKey(LOCAL_AUTH_SESSION_KEY), 'google');
+        localStorage.setItem(getFamilyStorageKey(LOCAL_USER_ROLE_KEY), 'admin');
         if (matched) {
           setPerspectiveId(matched.id);
           setSelectedId(matched.id);
@@ -520,8 +568,8 @@ export function App() {
         setCurrentUserName(displayName);
         setLoginError(null);
         setRole('admin');
-        localStorage.setItem(LOCAL_AUTH_SESSION_KEY, 'google');
-        localStorage.setItem(LOCAL_USER_ROLE_KEY, 'admin');
+        localStorage.setItem(getFamilyStorageKey(LOCAL_AUTH_SESSION_KEY), 'google');
+        localStorage.setItem(getFamilyStorageKey(LOCAL_USER_ROLE_KEY), 'admin');
         await forceSyncAllToFirestore(members, relationships, settings).catch(() => {});
         if (matched) {
           setPerspectiveId(matched.id);
@@ -573,9 +621,9 @@ export function App() {
   };
 
   const handleLogoutAndLock = async () => {
-    localStorage.removeItem(LOCAL_REMEMBERED_PASSCODE_KEY);
-    localStorage.removeItem(LOCAL_AUTH_SESSION_KEY);
-    localStorage.removeItem(LOCAL_USER_ROLE_KEY);
+    localStorage.removeItem(getFamilyStorageKey(LOCAL_REMEMBERED_PASSCODE_KEY));
+    localStorage.removeItem(getFamilyStorageKey(LOCAL_AUTH_SESSION_KEY));
+    localStorage.removeItem(getFamilyStorageKey(LOCAL_USER_ROLE_KEY));
     if (currentUserEmail) {
       await signOutFirebaseUser();
       setCurrentUserEmail(null);
@@ -599,7 +647,7 @@ export function App() {
       familyPasscode: cleanedPass
     };
     setSettings(updated);
-    localStorage.setItem(LOCAL_REMEMBERED_PASSCODE_KEY, cleanedPass);
+    localStorage.setItem(getFamilyStorageKey(LOCAL_REMEMBERED_PASSCODE_KEY), cleanedPass);
     if (firebaseConnected) {
       try {
         await saveSettingsToFirestore(updated);
@@ -610,6 +658,61 @@ export function App() {
       }
     } else {
       showToast('✅ 已更新首頁家族通行密碼！');
+    }
+  };
+
+  // Handlers: Create External Independent Family Tree
+  const handleCreateExternalFamily = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canEdit) {
+      showToast('⚠️ 僅有管理員具備新建外聯家族族譜之權限');
+      return;
+    }
+    const cleanId = newFamilyIdInput.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (!cleanId) {
+      showToast('⚠️ 請輸入有效的家族英文代碼（例：lin, chen）');
+      return;
+    }
+    if (cleanId === 'default' || cleanId === 'kuo-lin') {
+      showToast('⚠️ 此代碼為系統主族譜保留名稱，請換一個（例：lin, chen）');
+      return;
+    }
+    if (!newFamilyTitleInput.trim()) {
+      showToast('⚠️ 請輸入家族族譜名稱（例：林氏家族數位族譜）');
+      return;
+    }
+
+    setIsCreatingFamily(true);
+    try {
+      const adminEmails = [
+        ...newFamilyAdminEmailInput.split(/[,，\s]+/),
+        currentUserEmail || ''
+      ]
+        .map((e) => e.trim().toLowerCase())
+        .filter((e) => e && e.includes('@'));
+
+      const res = await createNewFamily({
+        familyId: cleanId,
+        title: newFamilyTitleInput.trim(),
+        familyPasscode: newFamilyPasscodeInput.trim() || '888888',
+        authorizedEmails: adminEmails.length > 0 ? adminEmails : (currentUserEmail ? [currentUserEmail] : []),
+        initialAncestorName: newFamilyAncestorInput.trim()
+      });
+
+      if (res.success) {
+        setCreatedFamilyResult({
+          url: res.url,
+          familyId: cleanId,
+          title: newFamilyTitleInput.trim()
+        });
+        showToast(`🎉 成功建立「${newFamilyTitleInput.trim()}」專屬獨立族譜！`);
+        listRegisteredFamilies().then(setRegisteredFamiliesList);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      showToast(`❌ 建立失敗：${message}`);
+    } finally {
+      setIsCreatingFamily(false);
     }
   };
 
@@ -976,7 +1079,9 @@ export function App() {
       lineId: '',
       fbUrl: '',
       photoUrl: '',
-      bio: ''
+      bio: '',
+      externalTreeName: '',
+      externalTreeUrl: ''
     });
     setIsDetailModalOpen(false);
     setIsAddModalOpen(true);
@@ -1050,6 +1155,8 @@ export function App() {
       workDetail: newMemberDraft.workDetail.trim(),
       lineId: newMemberDraft.lineId.trim(),
       fbUrl: newMemberDraft.fbUrl.trim(),
+      externalTreeName: newMemberDraft.externalTreeName.trim(),
+      externalTreeUrl: newMemberDraft.externalTreeUrl.trim(),
       ...(newMemberDraft.photoUrl ? { photoUrl: newMemberDraft.photoUrl } : {}),
       city: newMemberDraft.city,
       bio: newMemberDraft.bio.trim() || `${anchor.name}的新增親屬。`,
@@ -1067,7 +1174,7 @@ export function App() {
       [anchor.id]: updatedAnchor,
       [newId]: createdMember
     };
-    const nextRels = mergeWithInitialRelationships([...relationships, ...newRels]);
+    const nextRels = mergeWithFamilyRelationships([...relationships, ...newRels], activeFamilyId);
 
     setMembers(nextMembers);
     setRelationships(nextRels);
@@ -1175,6 +1282,8 @@ export function App() {
       nickname: (formData.nickname || '').trim(),
       email: (formData.email || '').trim().toLowerCase(),
       phone: (formData.phone || '').trim(),
+      externalTreeName: (formData.externalTreeName || '').trim(),
+      externalTreeUrl: (formData.externalTreeUrl || '').trim(),
       passingDate: formData.isAlive ? '' : formData.passingDate || '',
       lunarBirthday: autoLunar ? autoLunar.monthDay : formData.lunarBirthday
     };
@@ -1420,10 +1529,11 @@ export function App() {
         await forceSyncAllToFirestore(members, relationships, settings);
         setSyncMessage('✅ 成功連動 Firebase 並完成全家族資料同步！');
         subscribeToFamilyData(
-          (remoteMembers) => setMembers(mergeWithInitialMembers(remoteMembers)),
-          (remoteRels) => setRelationships(mergeWithInitialRelationships(remoteRels)),
+          (remoteMembers) => setMembers(mergeWithFamilyMembers(remoteMembers, activeFamilyId)),
+          (remoteRels) => setRelationships(mergeWithFamilyRelationships(remoteRels, activeFamilyId)),
           (remoteSettings) => setSettings(remoteSettings),
-          (errMsg) => setFirebaseError(errMsg)
+          (errMsg) => setFirebaseError(errMsg),
+          activeFamilyId
         );
         subscribeToAuthUser((email, displayName) => {
           setCurrentUserEmail(email);
@@ -1615,6 +1725,8 @@ export function App() {
             ? 'border-stone-300 bg-stone-50/90 hover:border-stone-400'
             : roleTag?.isSpouse
             ? 'border-pink-200 bg-pink-50/30 hover:border-pink-400'
+            : m.generation === 4
+            ? 'border-purple-300 bg-purple-50/25 hover:border-purple-500'
             : 'border-stone-200 bg-white hover:border-emerald-400'
         }`}
       >
@@ -1642,21 +1754,39 @@ export function App() {
         )}
 
         <div className="flex items-center justify-between gap-1 mb-2">
-          {!isVisitorPerspective && kin ? (
-            <span
-              className={`text-xs px-2.5 py-0.5 rounded-full font-extrabold ${
-                isPerspective
-                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                  : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-              }`}
-            >
-              {isPerspective ? '🎯 本人' : kin.title}
-            </span>
-          ) : (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-bold">
-              第 {m.generation} 代
-            </span>
-          )}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {!isVisitorPerspective && kin ? (
+              <span
+                className={`text-xs px-2.5 py-0.5 rounded-full font-extrabold ${
+                  isPerspective
+                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                    : m.generation === 4
+                    ? 'bg-purple-100 text-purple-900 border border-purple-300'
+                    : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                }`}
+              >
+                {isPerspective ? '🎯 本人' : kin.title}
+              </span>
+            ) : (
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                  m.generation === 4
+                    ? 'bg-purple-100 text-purple-900 border border-purple-300 font-extrabold'
+                    : 'bg-stone-100 text-stone-600'
+                }`}
+              >
+                第 {m.generation} 代
+              </span>
+            )}
+            {m.externalTreeUrl && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-900 border border-teal-300 font-black shadow-2xs"
+                title={`外聯族譜：${m.externalTreeName || '外聯家族'}`}
+              >
+                🌳 外聯
+              </span>
+            )}
+          </div>
           <span
             className={`text-sm font-bold shrink-0 ${
               m.gender === 'M' ? 'text-sky-600' : 'text-pink-600'
@@ -1813,6 +1943,28 @@ export function App() {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-stone-100 text-stone-900 overflow-hidden select-none">
+      {/* External Family Notice Bar */}
+      {activeFamilyId !== 'default' && (
+        <div className="bg-gradient-to-r from-emerald-800 via-teal-800 to-emerald-900 text-white text-xs px-3 sm:px-6 py-1.5 flex items-center justify-between shadow-xs shrink-0 z-50">
+          <div className="flex items-center gap-2 truncate">
+            <span className="font-black text-amber-300 flex items-center gap-1 shrink-0">
+              <span>🌐</span>
+              <span>外聯獨立族譜</span>
+            </span>
+            <span className="truncate font-semibold text-[11px] sm:text-xs">
+              目前瀏覽：【{settings.title}】 (代碼: {activeFamilyId})
+            </span>
+          </div>
+          <a
+            href={typeof window !== 'undefined' ? window.location.pathname : './'}
+            className="shrink-0 ml-2 px-2.5 py-0.5 rounded-lg bg-white/20 hover:bg-white/30 text-white font-extrabold text-[11px] sm:text-xs transition inline-flex items-center gap-1 shadow-2xs"
+            title="回到郭林家族主族譜"
+          >
+            <span>🏠 回主族譜 (郭林家族)</span>
+          </a>
+        </div>
+      )}
+
       {/* Fixed Top Navigation & Elder-Friendly Control Bar (Desktop 2-Row / Mobile 3-Row) */}
       <header className="sticky top-0 z-40 bg-white border-b-2 border-stone-200 px-3 sm:px-6 py-1.5 sm:py-2 shrink-0 shadow-xs">
         {/* ROW 1: Left Title & Right Font Size + Welcome + Logout (Parallel with Title) */}
@@ -2405,6 +2557,46 @@ export function App() {
                 }}
                 className="w-max mx-auto flex flex-col items-center space-y-6 py-4 px-4 sm:px-8"
               >
+              {activeFamilyId !== 'default' ? (
+                <div className="flex flex-col items-center space-y-8 py-4">
+                  {kinshipDropdownGroups.length === 0 ? (
+                    <div className="text-center p-8 bg-stone-50 rounded-2xl border border-stone-200">
+                      <p className="text-stone-600 font-bold mb-2">此專屬獨立族譜尚無成員資料</p>
+                      {canEdit && (
+                        <p className="text-xs text-stone-500">
+                          點擊上方「＋親屬」即可開始新增並建構家族人物！
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    kinshipDropdownGroups.map((group) => {
+                      const isGen4 = group.generation === 4;
+                      return (
+                        <div key={`ext-gen-${group.generation}`} className="flex flex-col items-center w-full">
+                          <div
+                            className={`mb-4 px-4 py-1.5 rounded-full font-black text-xs sm:text-sm shadow-xs flex items-center gap-2 ${
+                              isGen4
+                                ? 'bg-purple-100 text-purple-950 border-2 border-purple-300'
+                                : 'bg-emerald-100 text-emerald-950 border-2 border-emerald-300'
+                            }`}
+                          >
+                            <span>{isGen4 ? '🟣' : '🌱'}</span>
+                            <span>{group.label}</span>
+                            <span className="text-xs opacity-75">（共 {group.members.length} 人）</span>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 max-w-6xl">
+                            {group.members.map((m) => renderNodeCard(m.id))}
+                          </div>
+                          {group.generation < (kinshipDropdownGroups[kinshipDropdownGroups.length - 1]?.generation || 0) && (
+                            <div className="h-6 w-0.5 bg-stone-300 my-2"></div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              ) : (
+                <>
               {/* ================= GENERATION 1 ================= */}
               {branchView === 'both' && (
                 <div className="flex flex-col items-center">
@@ -2726,6 +2918,8 @@ export function App() {
                   )}
                 </div>
               </div>
+                </>
+              )}
             </div>
           </div>
           </div>
@@ -3249,67 +3443,159 @@ export function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-stone-200">
-                      {Object.values(members).map((target) => {
-                        const forward = isVisitorPerspective
-                          ? null
-                          : calculateKinship(perspectiveId, target.id, members, relationships);
-                        const reverse = isVisitorPerspective
-                          ? null
-                          : calculateKinship(target.id, perspectiveId, members, relationships);
+                      {kinshipDropdownGroups.map((group) => {
+                        const isGen4 = group.generation === 4;
                         return (
-                          <tr
-                            key={target.id}
-                            onClick={() => {
-                              setSelectedId(target.id);
-                              setPersonFocusId(target.id);
-                              setIsPhotoZoomed(false);
-                              setIsDetailModalOpen(true);
-                            }}
-                            className="hover:bg-emerald-50/60 cursor-pointer transition"
-                          >
-                            <td className="py-2.5 px-3 font-bold flex items-center gap-2 text-stone-900">
-                              <span className={`w-3 h-3 rounded-full ${target.color}`}></span>
-                              <span>{target.name}</span>
-                              {target.nickname && (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
-                                  {target.nickname}
-                                </span>
-                              )}
-                              {!target.isAlive && (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-stone-200 text-stone-600">
-                                  已歿
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-3 text-xs sm:text-sm font-bold">
-                              {target.familySide === 'paternal' && (
-                                <span className="text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200">
-                                  🟦 父系 (第{target.generation}代)
-                                </span>
-                              )}
-                              {target.familySide === 'maternal' && (
-                                <span className="text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                                  🟧 母系 (第{target.generation}代)
-                                </span>
-                              )}
-                              {target.familySide === 'core' && (
-                                <span className="text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                                  🟩 直系 (第{target.generation}代)
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-3 text-xs sm:text-sm font-semibold text-stone-700">
-                              {formatWorkDisplay(target.workStatus, target.workDetail)}
-                            </td>
-                            {!isVisitorPerspective && forward && reverse && (
-                              <>
-                                <td className="py-2.5 px-3 font-extrabold text-emerald-700">
-                                  {forward.title}
-                                </td>
-                                <td className="py-2.5 px-3 font-bold text-stone-800">{reverse.title}</td>
-                              </>
-                            )}
-                          </tr>
+                          <React.Fragment key={`matrix-group-${group.generation}`}>
+                            {/* Generation Divider Row */}
+                            <tr
+                              className={`${
+                                isGen4
+                                  ? 'bg-purple-100/90 border-y-2 border-purple-300'
+                                  : 'bg-stone-100 border-y-2 border-stone-300'
+                              }`}
+                            >
+                              <td
+                                colSpan={isVisitorPerspective ? 3 : 5}
+                                className="py-2.5 px-3 sm:px-4 font-black text-xs sm:text-sm tracking-wide"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span
+                                    className={`flex items-center gap-2 ${
+                                      isGen4 ? 'text-purple-950 font-black' : 'text-stone-800'
+                                    }`}
+                                  >
+                                    <span>
+                                      {isGen4
+                                        ? '🟣'
+                                        : group.generation === 1
+                                        ? '👑'
+                                        : group.generation === 2
+                                        ? '🌿'
+                                        : '🌱'}
+                                    </span>
+                                    <span>{group.label}</span>
+                                  </span>
+                                  <span
+                                    className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
+                                      isGen4
+                                        ? 'bg-purple-200 text-purple-900 border border-purple-300'
+                                        : 'bg-white text-stone-600 border border-stone-200'
+                                    }`}
+                                  >
+                                    {isGen4
+                                      ? `第四代新世代 · 共 ${group.members.length} 人`
+                                      : `共 ${group.members.length} 人`}
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+
+                            {/* Members within generation sorted by surname */}
+                            {group.members.map((target) => {
+                              const forward = isVisitorPerspective
+                                ? null
+                                : calculateKinship(perspectiveId, target.id, members, relationships);
+                              const reverse = isVisitorPerspective
+                                ? null
+                                : calculateKinship(target.id, perspectiveId, members, relationships);
+                              return (
+                                <tr
+                                  key={target.id}
+                                  onClick={() => {
+                                    setSelectedId(target.id);
+                                    setPersonFocusId(target.id);
+                                    setIsPhotoZoomed(false);
+                                    setIsDetailModalOpen(true);
+                                  }}
+                                  className={`cursor-pointer transition ${
+                                    isGen4
+                                      ? 'hover:bg-purple-50/80 bg-purple-50/20'
+                                      : 'hover:bg-emerald-50/60'
+                                  }`}
+                                >
+                                  <td className="py-2.5 px-3 font-bold flex items-center gap-2 text-stone-900">
+                                    <span
+                                      className={`w-3.5 h-3.5 rounded-full shrink-0 shadow-2xs ${
+                                        isGen4 ? 'bg-purple-600 ring-2 ring-purple-200' : target.color
+                                      }`}
+                                    ></span>
+                                    <span className={isGen4 ? 'text-purple-950 font-black' : ''}>
+                                      {target.name}
+                                    </span>
+                                    {target.nickname && (
+                                      <span
+                                        className={`text-xs px-1.5 py-0.5 rounded font-bold ${
+                                          isGen4
+                                            ? 'bg-purple-100 text-purple-900 border border-purple-300'
+                                            : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                        }`}
+                                      >
+                                        {target.nickname}
+                                      </span>
+                                    )}
+                                    {!target.isAlive && (
+                                      <span className="text-xs px-1.5 py-0.5 rounded bg-stone-200 text-stone-600">
+                                        已歿
+                                      </span>
+                                    )}
+                                    {target.externalTreeUrl && (
+                                      <span
+                                        className="text-[10px] px-1.5 py-0.5 rounded bg-teal-100 text-teal-800 border border-teal-200 font-extrabold"
+                                        title={`外聯獨立族譜：${target.externalTreeName || '外聯家族'}`}
+                                      >
+                                        🌳 外聯
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-xs sm:text-sm font-bold">
+                                    {isGen4 ? (
+                                      <span className="text-purple-900 bg-purple-100/90 px-2.5 py-1 rounded-full border border-purple-300 font-black inline-flex items-center gap-1 shadow-2xs">
+                                        <span>🟣</span>
+                                        <span>第四代</span>
+                                        <span className="text-purple-700 font-semibold text-[11px]">
+                                          ({target.familySide === 'paternal' ? '父系' : target.familySide === 'maternal' ? '母系' : '直系'})
+                                        </span>
+                                      </span>
+                                    ) : (
+                                      <>
+                                        {target.familySide === 'paternal' && (
+                                          <span className="text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200">
+                                            🟦 父系 (第{target.generation}代)
+                                          </span>
+                                        )}
+                                        {target.familySide === 'maternal' && (
+                                          <span className="text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                                            🟧 母系 (第{target.generation}代)
+                                          </span>
+                                        )}
+                                        {target.familySide === 'core' && (
+                                          <span className="text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                            🟩 直系 (第{target.generation}代)
+                                          </span>
+                                        )}
+                                      </>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-xs sm:text-sm font-semibold text-stone-700">
+                                    {formatWorkDisplay(target.workStatus, target.workDetail)}
+                                  </td>
+                                  {!isVisitorPerspective && forward && reverse && (
+                                    <>
+                                      <td
+                                        className={`py-2.5 px-3 font-extrabold ${
+                                          isGen4 ? 'text-purple-800' : 'text-emerald-700'
+                                        }`}
+                                      >
+                                        {forward.title}
+                                      </td>
+                                      <td className="py-2.5 px-3 font-bold text-stone-800">{reverse.title}</td>
+                                    </>
+                                  )}
+                                </tr>
+                              );
+                            })}
+                          </React.Fragment>
                         );
                       })}
                     </tbody>
@@ -3552,6 +3838,29 @@ export function App() {
                       {selectedMember.bio || '(尚無備註)'}
                     </div>
                   </div>
+                  {selectedMember.externalTreeUrl && (
+                    <div className="sm:col-span-2 pt-2 border-t border-emerald-200">
+                      <a
+                        href={
+                          selectedMember.externalTreeUrl.startsWith('http://') ||
+                          selectedMember.externalTreeUrl.startsWith('https://')
+                            ? selectedMember.externalTreeUrl
+                            : `https://${selectedMember.externalTreeUrl}`
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-sm sm:text-base flex items-center justify-center gap-2 shadow-md transition cursor-pointer group hover:scale-[1.01]"
+                      >
+                        <span className="text-xl">🌳</span>
+                        <span>
+                          前往「{selectedMember.externalTreeName?.trim() || `${selectedMember.name}所屬家族`}」族譜
+                        </span>
+                        <span className="text-xs text-emerald-100 group-hover:translate-x-1 transition-transform">
+                          ↗ (另開新分頁)
+                        </span>
+                      </a>
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -4080,6 +4389,49 @@ export function App() {
                   onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-medium text-stone-900 focus:outline-none focus:border-emerald-600 disabled:opacity-60"
                 />
+              </div>
+
+              {/* Row 7: 跨家族串接 - 外聯專屬族譜（選填） */}
+              <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-extrabold text-emerald-950 flex items-center gap-1.5">
+                    <span>🌳 跨家族串接：外聯專屬族譜（選填）</span>
+                  </span>
+                  <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                    伴侶家族互聯
+                  </span>
+                </div>
+                <p className="text-xs text-stone-600 leading-relaxed">
+                  若該成員（如配偶伴侶或姻親長輩）所屬家族建有獨立的專屬數位族譜，填寫後點開此人卡片即可顯示一鍵跳轉按鈕！
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-stone-700 font-bold mb-1 text-xs">
+                      外聯家族名稱
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!canEdit}
+                      placeholder="例：林氏家族族譜"
+                      value={formData.externalTreeName || ''}
+                      onChange={(e) => setFormData({ ...formData, externalTreeName: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-stone-300 font-bold text-stone-900 text-sm focus:outline-none focus:border-emerald-600 disabled:opacity-60"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-stone-700 font-bold mb-1 text-xs">
+                      外聯族譜網址（URL）
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!canEdit}
+                      placeholder="例：https://imsmallnew.github.io/family-tree/?family=lin"
+                      value={formData.externalTreeUrl || ''}
+                      onChange={(e) => setFormData({ ...formData, externalTreeUrl: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-stone-300 font-mono text-stone-900 text-xs sm:text-sm focus:outline-none focus:border-emerald-600 disabled:opacity-60"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Modal Footer */}
@@ -4712,6 +5064,48 @@ export function App() {
                 />
               </div>
 
+              {/* Row 7: 跨家族串接 - 外聯專屬族譜（選填） */}
+              <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-extrabold text-emerald-950 flex items-center gap-1.5">
+                    <span>🌳 跨家族串接：外聯專屬族譜（選填）</span>
+                  </span>
+                  <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                    伴侶家族互聯
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-stone-700 font-bold mb-1 text-xs">
+                      外聯家族名稱
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="例：林氏家族族譜"
+                      value={newMemberDraft.externalTreeName}
+                      onChange={(e) =>
+                        setNewMemberDraft({ ...newMemberDraft, externalTreeName: e.target.value })
+                      }
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-stone-300 font-bold text-stone-900 text-sm focus:outline-none focus:border-emerald-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-stone-700 font-bold mb-1 text-xs">
+                      外聯族譜網址（URL）
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="例：https://imsmallnew.github.io/family-tree/?family=lin"
+                      value={newMemberDraft.externalTreeUrl}
+                      onChange={(e) =>
+                        setNewMemberDraft({ ...newMemberDraft, externalTreeUrl: e.target.value })
+                      }
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-stone-300 font-mono text-stone-900 text-xs sm:text-sm focus:outline-none focus:border-emerald-600"
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* Modal Footer */}
               <div className="pt-4 border-t border-stone-200 flex flex-wrap items-center justify-between gap-3">
                 <span className="text-xs font-bold text-emerald-700">
@@ -4770,32 +5164,51 @@ export function App() {
             </div>
 
             {/* System Settings Tabs */}
-            <div className="grid grid-cols-2 gap-2 bg-stone-100 p-1.5 rounded-2xl border border-stone-200">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-stone-100 p-1.5 rounded-2xl border border-stone-200">
               <button
                 type="button"
                 onClick={() => setSystemSettingsTab('security')}
-                className={`py-2.5 px-4 rounded-xl text-sm font-extrabold transition cursor-pointer ${
+                className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-extrabold transition cursor-pointer ${
                   systemSettingsTab === 'security'
                     ? 'bg-indigo-700 text-white shadow-xs'
                     : 'text-stone-700 hover:bg-stone-200'
                 }`}
               >
-                🛡️ 網站標題與成員管理
+                🛡️ 網站標題與成員
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSystemSettingsTab('multiFamily');
+                  if (firebaseConnected) {
+                    setIsLoadingFamiliesList(true);
+                    listRegisteredFamilies()
+                      .then(setRegisteredFamiliesList)
+                      .finally(() => setIsLoadingFamiliesList(false));
+                  }
+                }}
+                className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-extrabold transition cursor-pointer flex items-center justify-center gap-1 ${
+                  systemSettingsTab === 'multiFamily'
+                    ? 'bg-teal-700 text-white shadow-xs'
+                    : 'text-stone-700 hover:bg-stone-200'
+                }`}
+              >
+                <span>🌐 新建外聯家族族譜</span>
               </button>
               <button
                 type="button"
                 onClick={() => setSystemSettingsTab('firebase')}
-                className={`py-2.5 px-4 rounded-xl text-sm font-extrabold transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-extrabold transition cursor-pointer flex items-center justify-center gap-1.5 ${
                   systemSettingsTab === 'firebase'
                     ? 'bg-emerald-700 text-white shadow-xs'
                     : 'text-stone-700 hover:bg-stone-200'
                 }`}
               >
-                <span>{firebaseConnected ? '🟢 Firebase 設定（已連動）' : '☁️ Firebase 設定'}</span>
+                <span>{firebaseConnected ? '🟢 Firebase（已連動）' : '☁️ Firebase 設定'}</span>
               </button>
             </div>
 
-            {systemSettingsTab === 'security' ? (
+            {systemSettingsTab === 'security' && (
               <div className="space-y-5">
                 {/* Section 1: Family Tree Title, Subtitle, Zoom & Footer Editing */}
                 <form
@@ -5128,7 +5541,259 @@ export function App() {
                   </pre>
                 </div>
               </div>
-            ) : (
+            )}
+
+            {systemSettingsTab === 'multiFamily' && (
+              <div className="space-y-5">
+                {/* Intro Card */}
+                <div className="bg-teal-50/80 border-2 border-teal-200 rounded-2xl p-4 space-y-2">
+                  <div className="text-base font-extrabold text-teal-950 flex items-center gap-2">
+                    <span>🌐 獨立專屬外聯家族族譜</span>
+                    <span className="text-xs bg-teal-200 text-teal-900 px-2 py-0.5 rounded-full font-bold">
+                      多家族支援
+                    </span>
+                  </div>
+                  <p className="text-xs sm:text-sm text-teal-900 leading-relaxed font-medium">
+                    為伴侶家族或親友家族建立「<strong>完全獨立</strong>」的專屬數位族譜。每個獨立家族擁有<strong>專屬通行密碼</strong>、<strong>可編輯管理員 Gmail 白名單</strong>、<strong>族譜標題</strong>與<strong>獨立人物名單</strong>，在同一個前端網站下各自隔離維護！
+                  </p>
+                  <p className="text-xs text-teal-800">
+                    💡 <strong>如何串接？</strong> 建立完成後獲得專屬網址（例如：<code>?family=lin</code>），只需將此網址填入伴侶人物卡片的「外聯族譜網址」，點選該伴侶卡片時即可一鍵跳轉瀏覽！
+                  </p>
+                </div>
+
+                {/* Creation Form */}
+                <form
+                  onSubmit={handleCreateExternalFamily}
+                  className="bg-white border-2 border-stone-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xs"
+                >
+                  <div className="text-sm sm:text-base font-extrabold text-stone-900 flex items-center justify-between">
+                    <span>➕ 新建獨立外聯家族族譜</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        家族唯一代碼 (Family ID) *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="例：lin （限英文小寫、數字、橫線）"
+                        value={newFamilyIdInput}
+                        onChange={(e) =>
+                          setNewFamilyIdInput(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))
+                        }
+                        className="w-full px-3.5 py-2 rounded-xl bg-stone-50 border border-stone-300 font-mono text-stone-900 text-sm focus:outline-none focus:border-teal-600"
+                      />
+                      <span className="text-[11px] text-stone-500 mt-0.5 block">
+                        此代碼將用於網址參數：?family={newFamilyIdInput || '代碼'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        家族族譜名稱 *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="例：林氏家族數位族譜"
+                        value={newFamilyTitleInput}
+                        onChange={(e) => setNewFamilyTitleInput(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl bg-stone-50 border border-stone-300 font-bold text-stone-900 text-sm focus:outline-none focus:border-teal-600"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        該家族專屬查看密碼 *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="例：666666 或 888888"
+                        value={newFamilyPasscodeInput}
+                        onChange={(e) => setNewFamilyPasscodeInput(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl bg-stone-50 border border-stone-300 font-bold text-stone-900 text-sm focus:outline-none focus:border-teal-600"
+                      />
+                      <span className="text-[11px] text-stone-500 mt-0.5 block">
+                        長輩或親友進入該家族族譜時需輸入的通行密碼
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        創始第一代長輩姓名（選填）
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="例：林金水 或 林心心"
+                        value={newFamilyAncestorInput}
+                        onChange={(e) => setNewFamilyAncestorInput(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl bg-stone-50 border border-stone-300 font-bold text-stone-900 text-sm focus:outline-none focus:border-teal-600"
+                      />
+                      <span className="text-[11px] text-stone-500 mt-0.5 block">
+                        建立後自動作為該獨立族譜之第一代創始人物
+                      </span>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        可編輯管理員 Gmail 白名單
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="例：lin_admin@gmail.com, you@gmail.com (多筆以逗號隔開)"
+                        value={newFamilyAdminEmailInput}
+                        onChange={(e) => setNewFamilyAdminEmailInput(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl bg-stone-50 border border-stone-300 font-medium text-stone-900 text-sm focus:outline-none focus:border-teal-600"
+                      />
+                      <span className="text-[11px] text-stone-500 mt-0.5 block">
+                        登入這些 Gmail 即可具備該獨立家族的完整新增、編輯與刪除權限
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="submit"
+                      disabled={isCreatingFamily}
+                      className="px-6 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-600 disabled:opacity-50 text-white font-extrabold text-sm shadow-md transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      {isCreatingFamily ? (
+                        <span>⏳ 正在建立族譜...</span>
+                      ) : (
+                        <>
+                          <span>🚀</span>
+                          <span>立即建立獨立外聯族譜</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+
+                {/* Success Card */}
+                {createdFamilyResult && (
+                  <div className="bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-4 sm:p-5 space-y-3 shadow-md animate-fadeIn">
+                    <div className="flex items-center gap-2 text-emerald-950 font-black text-base sm:text-lg">
+                      <span>🎉</span>
+                      <span>「{createdFamilyResult.title}」專屬族譜已建立成功！</span>
+                    </div>
+                    <div className="bg-white p-3 rounded-xl border border-emerald-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[11px] font-bold text-stone-500">專屬獨立分享網址：</div>
+                        <div className="font-mono text-xs sm:text-sm font-black text-emerald-800 break-all select-all">
+                          {createdFamilyResult.url}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(createdFamilyResult.url);
+                            showToast('📋 已複製專屬獨立族譜網址！');
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-extrabold text-xs cursor-pointer shadow-2xs"
+                        >
+                          📋 複製網址
+                        </button>
+                        <a
+                          href={createdFamilyResult.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-400 font-extrabold text-xs inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>🌳 開啟族譜</span>
+                          <span>↗</span>
+                        </a>
+                      </div>
+                    </div>
+                    <p className="text-xs text-emerald-900 leading-relaxed font-semibold">
+                      👉 <strong>串接提示：</strong> 您可以複製此網址，到當前族譜的伴侶人物卡片中點選「✏️ 編輯資料」，貼入「外聯族譜網址」，即可在卡片上一鍵前往該伴侶的專屬族譜！
+                    </p>
+                  </div>
+                )}
+
+                {/* Registered Families List */}
+                <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-extrabold text-stone-900">
+                      📚 現有已登記之外聯獨立家族清單
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsLoadingFamiliesList(true);
+                        listRegisteredFamilies()
+                          .then(setRegisteredFamiliesList)
+                          .finally(() => setIsLoadingFamiliesList(false));
+                      }}
+                      className="text-xs px-2.5 py-1 rounded-lg bg-white border border-stone-300 text-stone-700 font-bold hover:bg-stone-100 cursor-pointer"
+                    >
+                      {isLoadingFamiliesList ? '載入中...' : '🔄 重新整理'}
+                    </button>
+                  </div>
+
+                  {registeredFamiliesList.length === 0 ? (
+                    <div className="text-xs text-stone-500 py-3 text-center">
+                      尚未建立其他外聯家族族譜（或點擊上方重新整理載入）
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {registeredFamiliesList.map((fam) => {
+                        const baseUrl = typeof window !== 'undefined'
+                          ? `${window.location.origin}${window.location.pathname}`
+                          : 'https://imsmallnew.github.io/family-tree/';
+                        const famUrl = `${baseUrl}?family=${fam.familyId}`;
+                        return (
+                          <div
+                            key={fam.familyId}
+                            className="bg-white p-3 rounded-xl border border-stone-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 hover:border-teal-300 transition"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-extrabold text-sm text-stone-900">
+                                  {fam.title}
+                                </span>
+                                <span className="text-[11px] font-mono font-bold bg-teal-50 text-teal-800 border border-teal-200 px-1.5 py-0.2 rounded">
+                                  {fam.familyId}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-stone-500 mt-0.5 truncate">
+                                專屬網址: {famUrl}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(famUrl);
+                                  showToast(`📋 已複製「${fam.title}」專屬網址！`);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold cursor-pointer"
+                              >
+                                📋 複製
+                              </button>
+                              <a
+                                href={famUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2.5 py-1 rounded-lg bg-teal-700 hover:bg-teal-600 text-white text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <span>🌳 開啟</span>
+                                <span>↗</span>
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {systemSettingsTab === 'firebase' && (
               <div className="space-y-4">
                 {/* Step-by-step Tutorial Box */}
                 <div className="bg-emerald-50/60 border border-emerald-200 rounded-2xl p-4 space-y-2 text-xs text-stone-800 leading-relaxed">

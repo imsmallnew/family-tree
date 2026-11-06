@@ -20,7 +20,7 @@ import {
   Firestore
 } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL, FirebaseStorage } from 'firebase/storage';
-import { FamilySettings, FirebaseConfigInput, Member, MemberId, Relationship } from './types';
+import { FamilyRegistryItem, FamilySettings, FirebaseConfigInput, Member, MemberId, Relationship } from './types';
 import { DEFAULT_FAMILY_SETTINGS, INITIAL_MEMBERS, INITIAL_RELATIONSHIPS } from './data/initialData';
 
 const STORAGE_KEY_CONFIG = 'family_tree_firebase_config';
@@ -155,35 +155,88 @@ export async function signOutFirebaseUser(): Promise<void> {
   }
 }
 
+export function getActiveFamilyId(): string {
+  if (typeof window === 'undefined') return 'default';
+  try {
+    const searchParams = new URLSearchParams(window.location.search);
+    const queryFamily = searchParams.get('family')?.trim().toLowerCase();
+    if (queryFamily && queryFamily !== 'default' && queryFamily !== 'kuo-lin') {
+      return queryFamily;
+    }
+    if (window.location.hash) {
+      const hash = window.location.hash.replace(/^#\/?/, '');
+      const hashQuery = hash.includes('?') ? hash.split('?')[1] : hash;
+      const hashParams = new URLSearchParams(hashQuery);
+      const hashFamily = hashParams.get('family')?.trim().toLowerCase();
+      if (hashFamily && hashFamily !== 'default' && hashFamily !== 'kuo-lin') {
+        return hashFamily;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return 'default';
+}
+
+export function getFamilyFirestoreRefs(targetFamilyId?: string) {
+  if (!db) throw new Error('Firebase Firestore 尚未初始化');
+  const familyId = (targetFamilyId || getActiveFamilyId()).trim().toLowerCase();
+  const isDefault = !familyId || familyId === 'default' || familyId === 'kuo-lin';
+
+  if (isDefault) {
+    return {
+      isDefault: true,
+      familyId: 'default',
+      settingsDocRef: doc(db, 'settings', 'familyInfo'),
+      membersColRef: collection(db, 'members'),
+      memberDocRef: (memberId: string) => doc(db!, 'members', memberId),
+      relationshipsColRef: collection(db, 'relationships'),
+      relationshipDocRef: (relId: string) => doc(db!, 'relationships', relId)
+    };
+  }
+
+  return {
+    isDefault: false,
+    familyId,
+    settingsDocRef: doc(db, 'families', familyId, 'settings', 'familyInfo'),
+    membersColRef: collection(db, 'families', familyId, 'members'),
+    memberDocRef: (memberId: string) => doc(db!, 'families', familyId, 'members', memberId),
+    relationshipsColRef: collection(db, 'families', familyId, 'relationships'),
+    relationshipDocRef: (relId: string) => doc(db!, 'families', familyId, 'relationships', relId)
+  };
+}
+
 export async function seedFirestoreIfEmpty(
   currentMembers: Record<MemberId, Member>,
   currentRelationships: Relationship[],
-  currentSettings: FamilySettings
+  currentSettings: FamilySettings,
+  targetFamilyId?: string
 ): Promise<void> {
   if (!db) return;
+  const refs = getFamilyFirestoreRefs(targetFamilyId);
 
-  const settingsRef = doc(db, 'settings', 'familyInfo');
-  const settingsSnap = await getDoc(settingsRef);
+  const settingsSnap = await getDoc(refs.settingsDocRef);
   if (!settingsSnap.exists()) {
-    await setDoc(settingsRef, {
+    await setDoc(refs.settingsDocRef, {
       ...(currentSettings || DEFAULT_FAMILY_SETTINGS),
+      familyId: refs.familyId,
       updatedAt: new Date().toISOString()
     });
   }
 
-  const membersSnap = await getDocs(collection(db, 'members'));
-  if (membersSnap.empty) {
+  const membersSnap = await getDocs(refs.membersColRef);
+  if (membersSnap.empty && refs.isDefault) {
     const batch = writeBatch(db);
     const sourceMembers = currentMembers || INITIAL_MEMBERS;
     Object.values(sourceMembers).forEach((m) => {
-      const mRef = doc(db!, 'members', m.id);
+      const mRef = refs.memberDocRef(m.id);
       batch.set(mRef, { ...m, updatedAt: new Date().toISOString() });
     });
 
     const sourceRels = currentRelationships || INITIAL_RELATIONSHIPS;
     sourceRels.forEach((rel) => {
       const relId = `${rel.fromId}_${rel.toId}_${rel.type}`;
-      const rRef = doc(db!, 'relationships', relId);
+      const rRef = refs.relationshipDocRef(relId);
       batch.set(rRef, rel);
     });
 
@@ -194,22 +247,23 @@ export async function seedFirestoreIfEmpty(
 export async function forceSyncAllToFirestore(
   members: Record<MemberId, Member>,
   relationships: Relationship[],
-  settings: FamilySettings
+  settings: FamilySettings,
+  targetFamilyId?: string
 ): Promise<void> {
   if (!db) throw new Error('尚未連線至 Firebase Firestore');
+  const refs = getFamilyFirestoreRefs(targetFamilyId);
   const batch = writeBatch(db);
 
-  const settingsRef = doc(db, 'settings', 'familyInfo');
-  batch.set(settingsRef, { ...settings, updatedAt: new Date().toISOString() }, { merge: true });
+  batch.set(refs.settingsDocRef, { ...settings, familyId: refs.familyId, updatedAt: new Date().toISOString() }, { merge: true });
 
   Object.values(members).forEach((m) => {
-    const mRef = doc(db!, 'members', m.id);
+    const mRef = refs.memberDocRef(m.id);
     batch.set(mRef, { ...m, updatedAt: new Date().toISOString() }, { merge: true });
   });
 
   relationships.forEach((rel) => {
     const relId = `${rel.fromId}_${rel.toId}_${rel.type}`;
-    const rRef = doc(db!, 'relationships', relId);
+    const rRef = refs.relationshipDocRef(relId);
     batch.set(rRef, rel, { merge: true });
   });
 
@@ -220,18 +274,20 @@ export function subscribeToFamilyData(
   onMembersUpdate: (members: Record<MemberId, Member>) => void,
   onRelationshipsUpdate: (rels: Relationship[]) => void,
   onSettingsUpdate: (settings: FamilySettings) => void,
-  onError: (err: string) => void
+  onError: (err: string) => void,
+  targetFamilyId?: string
 ): () => void {
   if (!db) return () => {};
+  const refs = getFamilyFirestoreRefs(targetFamilyId);
 
   const unsubSettings = onSnapshot(
-    doc(db, 'settings', 'familyInfo'),
+    refs.settingsDocRef,
     (snap) => {
       if (snap.exists()) {
         const data = snap.data() as Partial<FamilySettings>;
         onSettingsUpdate({
-          logoText: data.logoText || DEFAULT_FAMILY_SETTINGS.logoText,
-          title: data.title || DEFAULT_FAMILY_SETTINGS.title,
+          logoText: data.logoText || (refs.isDefault ? DEFAULT_FAMILY_SETTINGS.logoText : '族'),
+          title: data.title || (refs.isDefault ? DEFAULT_FAMILY_SETTINGS.title : '家族數位族譜'),
           subtitle: data.subtitle || DEFAULT_FAMILY_SETTINGS.subtitle,
           familyPasscode: data.familyPasscode || DEFAULT_FAMILY_SETTINGS.familyPasscode,
           authorizedEmails: Array.isArray(data.authorizedEmails)
@@ -239,7 +295,8 @@ export function subscribeToFamilyData(
             : DEFAULT_FAMILY_SETTINGS.authorizedEmails,
           footerText: data.footerText || DEFAULT_FAMILY_SETTINGS.footerText,
           mobileDefaultZoom: typeof data.mobileDefaultZoom === 'number' ? data.mobileDefaultZoom : DEFAULT_FAMILY_SETTINGS.mobileDefaultZoom,
-          desktopDefaultZoom: typeof data.desktopDefaultZoom === 'number' ? data.desktopDefaultZoom : DEFAULT_FAMILY_SETTINGS.desktopDefaultZoom
+          desktopDefaultZoom: typeof data.desktopDefaultZoom === 'number' ? data.desktopDefaultZoom : DEFAULT_FAMILY_SETTINGS.desktopDefaultZoom,
+          familyId: refs.familyId
         });
       }
     },
@@ -247,10 +304,10 @@ export function subscribeToFamilyData(
   );
 
   const unsubMembers = onSnapshot(
-    collection(db, 'members'),
+    refs.membersColRef,
     (snap) => {
       if (!snap.empty) {
-        const next: Record<MemberId, Member> = { ...INITIAL_MEMBERS };
+        const next: Record<MemberId, Member> = refs.isDefault ? { ...INITIAL_MEMBERS } : {};
         snap.forEach((docSnap) => {
           const data = docSnap.data() as Member;
           if (data.id) {
@@ -258,26 +315,26 @@ export function subscribeToFamilyData(
           }
         });
         onMembersUpdate(next);
+      } else if (!refs.isDefault) {
+        onMembersUpdate({});
       }
     },
     (err) => onError(err.message)
   );
 
   const unsubRelationships = onSnapshot(
-    collection(db, 'relationships'),
+    refs.relationshipsColRef,
     (snap) => {
+      const rels: Relationship[] = [];
       if (!snap.empty) {
-        const rels: Relationship[] = [];
         snap.forEach((docSnap) => {
           const data = docSnap.data() as Relationship;
           if (data.fromId && data.toId && data.type) {
             rels.push(data);
           }
         });
-        if (rels.length > 0) {
-          onRelationshipsUpdate(rels);
-        }
       }
+      onRelationshipsUpdate(rels);
     },
     (err) => onError(err.message)
   );
@@ -289,32 +346,166 @@ export function subscribeToFamilyData(
   };
 }
 
-export async function saveMemberToFirestore(member: Member): Promise<void> {
+export async function saveMemberToFirestore(member: Member, targetFamilyId?: string): Promise<void> {
   if (!db) return;
-  const mRef = doc(db, 'members', member.id);
+  const refs = getFamilyFirestoreRefs(targetFamilyId);
+  const mRef = refs.memberDocRef(member.id);
   await setDoc(mRef, { ...member, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
-export async function saveRelationshipsToFirestore(newRels: Relationship[]): Promise<void> {
+export async function saveRelationshipsToFirestore(newRels: Relationship[], targetFamilyId?: string): Promise<void> {
   if (!db || newRels.length === 0) return;
+  const refs = getFamilyFirestoreRefs(targetFamilyId);
   const batch = writeBatch(db);
   newRels.forEach((rel) => {
     const relId = `${rel.fromId}_${rel.toId}_${rel.type}`;
-    const rRef = doc(db!, 'relationships', relId);
+    const rRef = refs.relationshipDocRef(relId);
     batch.set(rRef, rel, { merge: true });
   });
   await batch.commit();
 }
 
-export async function deleteMemberFromFirestore(memberId: MemberId): Promise<void> {
+export async function deleteMemberFromFirestore(memberId: MemberId, targetFamilyId?: string): Promise<void> {
   if (!db) return;
-  await deleteDoc(doc(db, 'members', memberId));
+  const refs = getFamilyFirestoreRefs(targetFamilyId);
+  await deleteDoc(refs.memberDocRef(memberId));
 }
 
-export async function saveSettingsToFirestore(settings: FamilySettings): Promise<void> {
+export async function saveSettingsToFirestore(settings: FamilySettings, targetFamilyId?: string): Promise<void> {
   if (!db) return;
-  const sRef = doc(db, 'settings', 'familyInfo');
-  await setDoc(sRef, { ...settings, updatedAt: new Date().toISOString() }, { merge: true });
+  const refs = getFamilyFirestoreRefs(targetFamilyId);
+  await setDoc(refs.settingsDocRef, { ...settings, familyId: refs.familyId, updatedAt: new Date().toISOString() }, { merge: true });
+  if (!refs.isDefault) {
+    const regRef = doc(db, 'families', refs.familyId);
+    await setDoc(regRef, {
+      title: settings.title,
+      familyPasscode: settings.familyPasscode,
+      authorizedEmails: settings.authorizedEmails,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  }
+}
+
+export async function createNewFamily({
+  familyId,
+  title,
+  familyPasscode,
+  authorizedEmails,
+  initialAncestorName
+}: {
+  familyId: string;
+  title: string;
+  familyPasscode: string;
+  authorizedEmails: string[];
+  initialAncestorName?: string;
+}): Promise<{ success: boolean; url: string; error?: string }> {
+  if (!db) {
+    throw new Error('尚未連線至 Firebase Firestore，請先確認連線。');
+  }
+
+  const cleanFamilyId = familyId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  if (!cleanFamilyId) {
+    throw new Error('家族代碼不可為空，且僅能包含英文字母、數字與橫線（例：lin, chen）。');
+  }
+  if (cleanFamilyId === 'default' || cleanFamilyId === 'kuo-lin') {
+    throw new Error('此家族代碼為系統預設主族譜保留名稱，請換一個代碼（例：lin, chen）。');
+  }
+
+  const registryDocRef = doc(db, 'families', cleanFamilyId);
+  const existingSnap = await getDoc(registryDocRef);
+  if (existingSnap.exists()) {
+    throw new Error(`家族代碼「${cleanFamilyId}」已經存在！請使用其他代碼。`);
+  }
+
+  const cleanedEmails = authorizedEmails
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  const batch = writeBatch(db);
+
+  // 1. Registry Doc
+  batch.set(registryDocRef, {
+    familyId: cleanFamilyId,
+    title: title.trim(),
+    familyPasscode: familyPasscode.trim(),
+    authorizedEmails: cleanedEmails,
+    createdAt: new Date().toISOString()
+  });
+
+  // 2. Settings Doc
+  const settingsDocRef = doc(db, 'families', cleanFamilyId, 'settings', 'familyInfo');
+  const initialSettings: FamilySettings = {
+    logoText: title.trim().charAt(0) || '族',
+    title: title.trim(),
+    subtitle: '專屬家族數位族譜 · 點擊卡片可放大檢視詳細資訊',
+    familyPasscode: familyPasscode.trim() || '888888',
+    authorizedEmails: cleanedEmails,
+    footerText: `此網站由 ${title.trim()} 建置 \t© ${new Date().getFullYear()} All Rights Reserved.`,
+    mobileDefaultZoom: 55,
+    desktopDefaultZoom: 100,
+    familyId: cleanFamilyId
+  };
+  batch.set(settingsDocRef, { ...initialSettings, updatedAt: new Date().toISOString() });
+
+  // 3. Initial Seed Member
+  const ancestorName = (initialAncestorName || '').trim() || `${title.replace(/族譜|家族|數位/g, '') || '創始'}長輩`;
+  const rootMember: Member = {
+    id: `ancestor_${cleanFamilyId}`,
+    familySide: 'core',
+    roleLabel: '第一代長輩',
+    name: ancestorName,
+    gender: 'M',
+    generation: 1,
+    birthOrder: 1,
+    birthday: '1940-01-01',
+    lunarBirthday: '',
+    isAlive: true,
+    maritalStatus: 'single',
+    workStatus: 'retired',
+    workDetail: '',
+    lineId: '',
+    fbUrl: '',
+    city: '台北市',
+    bio: `${title.trim()} 第一代創始長輩。`,
+    color: 'bg-emerald-600',
+    isMinor: false
+  };
+  const memberDocRef = doc(db, 'families', cleanFamilyId, 'members', rootMember.id);
+  batch.set(memberDocRef, { ...rootMember, updatedAt: new Date().toISOString() });
+
+  await batch.commit();
+
+  const baseUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}${window.location.pathname}`
+    : 'https://imsmallnew.github.io/family-tree/';
+  const url = `${baseUrl}?family=${cleanFamilyId}`;
+
+  return { success: true, url };
+}
+
+export async function listRegisteredFamilies(): Promise<FamilyRegistryItem[]> {
+  if (!db) return [];
+  try {
+    const snap = await getDocs(collection(db, 'families'));
+    const list: FamilyRegistryItem[] = [];
+    snap.forEach((docSnap) => {
+      const data = docSnap.data();
+      if (data.familyId && data.title) {
+        list.push({
+          familyId: data.familyId,
+          title: data.title,
+          familyPasscode: data.familyPasscode,
+          authorizedEmails: data.authorizedEmails || [],
+          createdAt: data.createdAt,
+          createdBy: data.createdBy
+        });
+      }
+    });
+    return list;
+  } catch (e) {
+    console.warn('Failed to list registered families:', e);
+    return [];
+  }
 }
 
 export async function uploadMemberPhoto(memberId: MemberId, file: File): Promise<string> {

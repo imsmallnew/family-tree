@@ -29,6 +29,8 @@ export interface Member {
   color: string;
   isMinor: boolean;
   photoUrl?: string;
+  externalTreeUrl?: string;  // 外聯獨立族譜網址 (例：https://imsmallnew.github.io/family-tree/?family=lin)
+  externalTreeName?: string; // 外聯家族名稱 (例：林氏家族族譜)
 }
 
 export interface Relationship {
@@ -51,6 +53,16 @@ export interface FamilySettings {
   footerText?: string;          // 頁尾版權與建置者自訂文字
   mobileDefaultZoom?: number;   // 手機版預設縮放尺寸 % (預設 55)
   desktopDefaultZoom?: number;  // 電腦版預設縮放尺寸 % (預設 100)
+  familyId?: string;            // 家族獨立代碼 (例：kuo-lin, lin, chen)
+}
+
+export interface FamilyRegistryItem {
+  familyId: string;
+  title: string;
+  familyPasscode?: string;
+  authorizedEmails?: string[];
+  createdAt?: string;
+  createdBy?: string;
 }
 
 export interface FirebaseConfigInput {
