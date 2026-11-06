@@ -211,6 +211,7 @@ export function App() {
   const [personFocusId, setPersonFocusId] = useState<MemberId>('me');
   const [zoomScale, setZoomScale] = useState<number>(1);
   const [kinshipSearchQuery, setKinshipSearchQuery] = useState('');
+  const [kinshipSourceId, setKinshipSourceId] = useState<MemberId>('me');
   const [kinshipTargetId, setKinshipTargetId] = useState<MemberId>('brother');
   const [isKinshipMatrixOpen, setIsKinshipMatrixOpen] = useState(false);
   const [branchView, setBranchView] = useState<LineageBranchView>('both');
@@ -717,6 +718,32 @@ export function App() {
       }
     }
   }, [perspectiveId, activeTab, isUnlocked]);
+
+  // Synchronize kinshipSourceId whenever a logged-in or chosen perspective member changes
+  useEffect(() => {
+    if (perspectiveId !== 'visitor' && members[perspectiveId]) {
+      setKinshipSourceId(perspectiveId);
+    }
+  }, [perspectiveId, members]);
+
+  // Smoothly switch branch view (總覽 / 父系 / 母系) and auto-center on the target lineage
+  const handleChangeBranchView = (newBranch: LineageBranchView) => {
+    setBranchView(newBranch);
+    setTimeout(() => {
+      const viewport = treeViewportRef.current;
+      if (viewport) {
+        viewport.scrollLeft = 0;
+        viewport.scrollTop = 0;
+      }
+      if (newBranch === 'paternal') {
+        centerMemberInTree('father');
+      } else if (newBranch === 'maternal') {
+        centerMemberInTree('mother');
+      } else {
+        centerMemberInTree(perspectiveId === 'visitor' ? 'pGrandpa' : perspectiveId);
+      }
+    }, 70);
+  };
 
   // Grab-to-pan Mouse Event Handlers for the white tree canvas
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -1907,7 +1934,7 @@ export function App() {
             <div className="flex items-center gap-1 bg-stone-100 p-0.5 rounded-lg border border-stone-300 text-xs shrink-0">
               <button
                 type="button"
-                onClick={() => setBranchView('both')}
+                onClick={() => handleChangeBranchView('both')}
                 className={`px-2.5 py-1 rounded text-xs font-bold transition cursor-pointer ${
                   branchView === 'both'
                     ? 'bg-emerald-700 text-white shadow-2xs'
@@ -1918,7 +1945,7 @@ export function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setBranchView('paternal')}
+                onClick={() => handleChangeBranchView('paternal')}
                 className={`px-2.5 py-1 rounded text-xs font-bold transition cursor-pointer ${
                   branchView === 'paternal'
                     ? 'bg-sky-700 text-white shadow-2xs'
@@ -1929,7 +1956,7 @@ export function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setBranchView('maternal')}
+                onClick={() => handleChangeBranchView('maternal')}
                 className={`px-2.5 py-1 rounded text-xs font-bold transition cursor-pointer ${
                   branchView === 'maternal'
                     ? 'bg-amber-700 text-white shadow-2xs'
@@ -2098,7 +2125,7 @@ export function App() {
             <div className="flex items-center gap-0.5 bg-stone-100 p-0.5 rounded-lg border border-stone-300 text-[10px] shrink-0">
               <button
                 type="button"
-                onClick={() => setBranchView('both')}
+                onClick={() => handleChangeBranchView('both')}
                 className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition cursor-pointer ${
                   branchView === 'both'
                     ? 'bg-emerald-700 text-white shadow-2xs'
@@ -2109,7 +2136,7 @@ export function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setBranchView('paternal')}
+                onClick={() => handleChangeBranchView('paternal')}
                 className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition cursor-pointer ${
                   branchView === 'paternal'
                     ? 'bg-sky-700 text-white shadow-2xs'
@@ -2120,7 +2147,7 @@ export function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setBranchView('maternal')}
+                onClick={() => handleChangeBranchView('maternal')}
                 className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition cursor-pointer ${
                   branchView === 'maternal'
                     ? 'bg-amber-700 text-white shadow-2xs'
@@ -2203,7 +2230,7 @@ export function App() {
                   transformOrigin: 'top center',
                   transition: 'transform 0.15s ease-out'
                 }}
-                className="w-max min-w-full mx-auto flex flex-col items-center space-y-6 py-4 px-4 sm:px-8"
+                className="w-max mx-auto flex flex-col items-center space-y-6 py-4 px-4 sm:px-8"
               >
               {/* ================= GENERATION 1 ================= */}
               {branchView === 'both' && (
@@ -2335,30 +2362,38 @@ export function App() {
               <div className="flex flex-col items-center">
                 <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 mb-3">
                   <span className="text-xs sm:text-base font-extrabold text-stone-800 px-3 sm:px-4 py-1 rounded-full bg-stone-100 border border-stone-300">
-                    第二代（爸爸、媽媽 與 伯叔姑舅姨）
+                    {branchView === 'paternal'
+                      ? '第二代（爸爸 與 伯叔姑）'
+                      : branchView === 'maternal'
+                      ? '第二代（媽媽 與 舅姨）'
+                      : '第二代（爸爸、媽媽 與 伯叔姑舅姨）'}
                   </span>
                   {canEdit && (
                     <>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openAddMemberModal('father', 'sibling');
-                        }}
-                        className="text-xs px-2.5 sm:px-3 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 font-bold cursor-pointer"
-                      >
-                        + 新增爸爸手足 (伯/叔/姑)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openAddMemberModal('mother', 'sibling');
-                        }}
-                        className="text-xs px-2.5 sm:px-3 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold cursor-pointer"
-                      >
-                        + 新增媽媽手足 (舅/姨)
-                      </button>
+                      {branchView !== 'maternal' && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openAddMemberModal('father', 'sibling');
+                          }}
+                          className="text-xs px-2.5 sm:px-3 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 font-bold cursor-pointer"
+                        >
+                          + 新增爸爸手足 (伯/叔/姑)
+                        </button>
+                      )}
+                      {branchView !== 'paternal' && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openAddMemberModal('mother', 'sibling');
+                          }}
+                          className="text-xs px-2.5 sm:px-3 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold cursor-pointer"
+                        >
+                          + 新增媽媽手足 (舅/姨)
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -2651,37 +2686,64 @@ export function App() {
         {/* TAB 3: Interactive Kinship Explorer Mode (🔎 稱謂模式) */}
         {activeTab === 'kinship' && (
           <div className="bg-white border-2 border-stone-200 rounded-2xl p-3 sm:p-6 overflow-auto shadow-xs flex-1 h-full w-full space-y-5">
-            {/* 1. Perspective Explanation & Search */}
-            <div className="bg-emerald-50/70 border-2 border-emerald-300 rounded-2xl p-3 sm:p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+            {/* 1. Perspective Explanation & Dual Dropdown Selectors */}
+            <div className="bg-emerald-50/80 border-2 border-emerald-300 rounded-2xl p-3 sm:p-4 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
               <div>
-                <h3 className="font-extrabold text-base sm:text-xl text-emerald-950 flex items-center gap-2">
+                <h3 className="font-extrabold text-base sm:text-lg text-emerald-950 flex items-center gap-2">
                   <span>🔎 親屬稱謂智慧查詢與對照模式</span>
                 </h3>
-                <p className="text-xs sm:text-sm text-emerald-800 font-medium mt-1">
-                  從「<span className="font-black">{perspectiveMember.name}</span>」出發，點選下方任何一位家族成員，即可即時顯示精確稱謂、稱呼方式與推導鏈！
+                <p className="text-xs sm:text-sm text-emerald-900 font-medium mt-0.5">
+                  自選「出發人物」與「查詢目標」，免手動輸入，即時計算互稱稱謂與推導鏈！
                 </p>
               </div>
 
-              <div className="w-full md:w-auto">
-                <input
-                  type="text"
-                  value={kinshipSearchQuery}
-                  onChange={(e) => setKinshipSearchQuery(e.target.value)}
-                  placeholder="🔍 搜尋親戚姓名或稱謂..."
-                  className="w-full md:w-56 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-xs sm:text-sm font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+              {/* Two Dropdown Selectors: Source (A) and Target (B) */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                {/* Dropdown A: Source */}
+                <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border-2 border-emerald-400 shadow-2xs">
+                  <span className="text-xs font-black text-emerald-900 shrink-0">從：</span>
+                  <select
+                    value={kinshipSourceId}
+                    onChange={(e) => setKinshipSourceId(e.target.value)}
+                    className="text-xs sm:text-sm font-black text-stone-900 bg-transparent focus:outline-none cursor-pointer pr-1"
+                  >
+                    {Object.values(members).map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} {m.nickname ? `(${m.nickname})` : ''} · {m.roleLabel || ''}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-xs font-bold text-stone-600 shrink-0">出發</span>
+                </div>
+
+                {/* Dropdown B: Target */}
+                <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border-2 border-emerald-500 shadow-2xs">
+                  <span className="text-xs font-black text-emerald-900 shrink-0">➔ 查詢：</span>
+                  <select
+                    value={kinshipTargetId}
+                    onChange={(e) => setKinshipTargetId(e.target.value)}
+                    className="text-xs sm:text-sm font-black text-emerald-900 bg-transparent focus:outline-none cursor-pointer pr-1"
+                  >
+                    {Object.values(members).map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} {m.nickname ? `(${m.nickname})` : ''} · {m.roleLabel || ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
             {/* 2. Interactive Kinship Highlight Card */}
             {(() => {
+              const source =
+                members[kinshipSourceId] ||
+                (perspectiveId !== 'visitor' ? members[perspectiveId] : null) ||
+                members.me;
               const target = members[kinshipTargetId] || members.brother || members.me;
-              const forwardKin = isVisitorPerspective
-                ? null
-                : calculateKinship(perspectiveId, target.id, members, relationships);
-              const reverseKin = isVisitorPerspective
-                ? null
-                : calculateKinship(target.id, perspectiveId, members, relationships);
+              const forwardKin = calculateKinship(source.id, target.id, members, relationships);
+              const reverseKin = calculateKinship(target.id, source.id, members, relationships);
+              const isSamePerson = source.id === target.id;
               const lunar = convertSolarToLunar(target.birthday, target.isAlive, target.passingDate);
 
               return (
@@ -2716,31 +2778,39 @@ export function App() {
                         )}
                       </div>
 
-                      {!isVisitorPerspective && forwardKin && reverseKin && (
-                        <div className="mt-2.5 p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex flex-col gap-1.5">
-                          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs sm:text-sm">
-                            <span className="text-stone-600 font-bold">
-                              「{perspectiveMember.name}」稱呼「{target.name}」為：
-                            </span>
-                            <span className="text-base sm:text-lg font-black text-emerald-800 bg-white px-3 py-0.5 rounded-full border border-emerald-300 shadow-2xs">
-                              {target.id === perspectiveId ? '本人 (自己)' : forwardKin.title}
-                            </span>
-                          </div>
-                          {target.id !== perspectiveId && (
-                            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs sm:text-sm text-stone-600">
-                              <span>對方稱呼您為：</span>
-                              <span className="font-extrabold text-stone-900 bg-white px-2.5 py-0.5 rounded-full border border-stone-200">
-                                {reverseKin.title}
-                              </span>
-                            </div>
-                          )}
-                          {forwardKin.path && target.id !== perspectiveId && (
-                            <div className="text-xs text-stone-500 font-medium mt-0.5 text-center sm:text-left">
-                              🧭 關係鏈推導：{forwardKin.path}
-                            </div>
-                          )}
+                      {/* Reciprocal Titles & Relationship Chain (Always displayed!) */}
+                      <div className="mt-3 p-3 sm:p-4 bg-emerald-50/90 rounded-xl border border-emerald-300 flex flex-col gap-2">
+                        {/* 1. A 稱呼 B */}
+                        <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs sm:text-sm">
+                          <span className="text-stone-700 font-bold">
+                            「<span className="text-emerald-950 font-black">{source.name}</span>」稱呼「<span className="text-emerald-950 font-black">{target.name}</span>」為：
+                          </span>
+                          <span className="text-base sm:text-lg font-black text-emerald-800 bg-white px-3 py-0.5 rounded-full border-2 border-emerald-400 shadow-2xs">
+                            {isSamePerson ? '本人 (自己)' : (forwardKin.title || '親戚')}
+                          </span>
                         </div>
-                      )}
+
+                        {/* 2. 對方稱呼您 (B 稱呼 A) */}
+                        {!isSamePerson && (
+                          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs sm:text-sm text-stone-700">
+                            <span className="font-bold">
+                              「<span className="text-emerald-950 font-black">{target.name}</span>」稱呼「<span className="text-emerald-950 font-black">{source.name}</span>」為：
+                            </span>
+                            <span className="font-extrabold text-emerald-900 bg-white px-2.5 py-0.5 rounded-full border border-stone-300 shadow-2xs">
+                              {reverseKin.title || '親戚'}
+                            </span>
+                            <span className="text-[11px] text-stone-500 font-medium">（對方稱呼您）</span>
+                          </div>
+                        )}
+
+                        {/* 3. 關係鏈推導 */}
+                        <div className="text-xs text-stone-600 font-medium mt-0.5 flex items-start gap-1.5 bg-white/70 p-2 rounded-lg border border-emerald-200 text-left">
+                          <span className="shrink-0 font-bold text-emerald-800">🧭 關係鏈推導：</span>
+                          <span className="text-stone-800 font-semibold break-all">
+                            {isSamePerson ? '出發者與查詢對象為同一人' : (forwardKin.path || '家族成員直系/旁系血親')}
+                          </span>
+                        </div>
+                      </div>
 
                       <div className="mt-2.5 flex flex-wrap items-center justify-center sm:justify-start gap-3 text-xs sm:text-sm text-stone-600">
                         <span>🎂 {target.birthday}</span>
@@ -2783,9 +2853,18 @@ export function App() {
 
             {/* 3. Fast Relative Picker Grid */}
             <div>
-              <h4 className="text-xs sm:text-sm font-black text-stone-800 mb-2.5 flex items-center gap-2">
-                <span>👇 點擊下列任一成員立即查看稱謂關聯：</span>
-              </h4>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-2.5">
+                <h4 className="text-xs sm:text-sm font-black text-stone-800 flex items-center gap-1.5">
+                  <span>👇 點擊下列任一成員立即設為查詢對象：</span>
+                </h4>
+                <input
+                  type="text"
+                  value={kinshipSearchQuery}
+                  onChange={(e) => setKinshipSearchQuery(e.target.value)}
+                  placeholder="🔍 快速篩選名單..."
+                  className="w-full sm:w-48 px-2.5 py-1 rounded-xl bg-white border border-stone-300 text-xs font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
                 {Object.values(members)
@@ -2799,10 +2878,9 @@ export function App() {
                     );
                   })
                   .map((m) => {
-                    const kin = isVisitorPerspective
-                      ? null
-                      : calculateKinship(perspectiveId, m.id, members, relationships);
+                    const kin = calculateKinship(kinshipSourceId, m.id, members, relationships);
                     const isSelected = kinshipTargetId === m.id;
+                    const isSource = kinshipSourceId === m.id;
 
                     return (
                       <button
@@ -2812,6 +2890,8 @@ export function App() {
                         className={`p-2 rounded-xl border-2 text-left transition cursor-pointer flex items-center gap-2 ${
                           isSelected
                             ? 'bg-emerald-50 border-emerald-600 ring-2 ring-emerald-500/30 shadow-xs'
+                            : isSource
+                            ? 'bg-sky-50 border-sky-400'
                             : 'bg-stone-50 hover:bg-white border-stone-200 hover:border-emerald-300'
                         }`}
                       >
@@ -2827,16 +2907,19 @@ export function App() {
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="font-extrabold text-xs sm:text-sm text-stone-900 truncate">
-                            {m.name}
+                          <div className="flex items-center gap-1">
+                            <span className="font-extrabold text-xs text-stone-900 truncate">
+                              {m.name}
+                            </span>
+                            {isSource && (
+                              <span className="text-[10px] px-1 rounded bg-sky-200 text-sky-900 font-black shrink-0">
+                                起點
+                              </span>
+                            )}
                           </div>
-                          {kin && !isVisitorPerspective ? (
-                            <div className="text-[11px] font-extrabold text-emerald-800 truncate">
-                              {m.id === perspectiveId ? '本人' : kin.title}
-                            </div>
-                          ) : (
-                            <div className="text-[11px] text-stone-500 truncate">第{m.generation}代</div>
-                          )}
+                          <div className="text-[11px] font-extrabold text-emerald-800 truncate">
+                            {isSource ? '【出發本人】' : `【${kin.title || '親戚'}】`}
+                          </div>
                         </div>
                       </button>
                     );
