@@ -2122,48 +2122,68 @@ export function App() {
                   </button>
 
                   {isQuickAddMenuOpen && (
-                    <>
+                    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-3 sm:p-4">
                       <div
-                        className="fixed inset-0 z-40"
+                        className="fixed inset-0"
                         onClick={() => setIsQuickAddMenuOpen(false)}
                       />
-                      <div className="absolute left-0 mt-1 w-52 bg-white border-2 border-emerald-300 rounded-2xl shadow-xl p-2 z-50 space-y-1">
-                        <div className="text-[11px] font-extrabold text-emerald-950 px-2 py-1 border-b border-stone-100">
-                          ➕ 為「{selectedMember.name}」新增：
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="relative z-10 w-full max-w-sm bg-white border-2 border-emerald-500 rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3"
+                      >
+                        <div className="flex items-center justify-between border-b border-stone-200 pb-2">
+                          <span className="text-sm font-extrabold text-stone-900">
+                            ➕ 為「{selectedMember.name}」新增親屬：
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsQuickAddMenuOpen(false)}
+                            className="w-7 h-7 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-600 font-black text-xs flex items-center justify-center cursor-pointer"
+                          >
+                            ✕
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsQuickAddMenuOpen(false);
-                            openAddMemberModal(selectedId, 'sibling');
-                          }}
-                          className="w-full text-left px-2.5 py-1.5 rounded-lg bg-sky-50/70 hover:bg-sky-100 text-sky-900 border border-sky-200 text-xs font-bold transition cursor-pointer"
-                        >
-                          + 兄弟姐妹 (同輩)
-                        </button>
-                        <button
-                          type="button"
-                          disabled={Boolean(getSpouseOf(selectedId, relationships))}
-                          onClick={() => {
-                            setIsQuickAddMenuOpen(false);
-                            openAddMemberModal(selectedId, 'spouse');
-                          }}
-                          className="w-full text-left px-2.5 py-1.5 rounded-lg bg-pink-50/70 hover:bg-pink-100 text-pink-900 border border-pink-200 text-xs font-bold transition cursor-pointer disabled:opacity-40"
-                        >
-                          + 配偶 (伴侶)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsQuickAddMenuOpen(false);
-                            openAddMemberModal(selectedId, 'child');
-                          }}
-                          className="w-full text-left px-2.5 py-1.5 rounded-lg bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 text-xs font-bold transition cursor-pointer"
-                        >
-                          + 子女 (下一代)
-                        </button>
+
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsQuickAddMenuOpen(false);
+                              openAddMemberModal(selectedId, 'sibling');
+                            }}
+                            className="w-full text-left px-3.5 py-2.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-300 text-sm font-extrabold transition cursor-pointer flex items-center justify-between"
+                          >
+                            <span>+ 兄弟姐妹 (同輩)</span>
+                            <span className="text-xs text-sky-700 font-medium">堂表手足</span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={Boolean(getSpouseOf(selectedId, relationships))}
+                            onClick={() => {
+                              setIsQuickAddMenuOpen(false);
+                              openAddMemberModal(selectedId, 'spouse');
+                            }}
+                            className="w-full text-left px-3.5 py-2.5 rounded-xl bg-pink-50 hover:bg-pink-100 text-pink-900 border border-pink-300 text-sm font-extrabold transition cursor-pointer flex items-center justify-between disabled:opacity-40"
+                          >
+                            <span>+ 配偶 (伴侶)</span>
+                            <span className="text-xs text-pink-700 font-medium">
+                              {Boolean(getSpouseOf(selectedId, relationships)) ? '已有配偶' : '夫妻結婚'}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsQuickAddMenuOpen(false);
+                              openAddMemberModal(selectedId, 'child');
+                            }}
+                            className="w-full text-left px-3.5 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-sm font-extrabold transition cursor-pointer flex items-center justify-between"
+                          >
+                            <span>+ 子女 (下一代)</span>
+                            <span className="text-xs text-emerald-700 font-medium">兒子/女兒</span>
+                          </button>
+                        </div>
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
               </div>
