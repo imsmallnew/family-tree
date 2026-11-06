@@ -1817,10 +1817,10 @@ export function App() {
       <header className="sticky top-0 z-40 bg-white border-b-2 border-stone-200 px-3 sm:px-6 py-1.5 sm:py-2 shrink-0 shadow-xs">
         {/* ROW 1: Left Title & Right Font Size + Welcome + Logout (Parallel with Title) */}
         <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-2">
-          {/* Left: Logo & Title & Subtitle */}
-          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+          {/* Left: Title & Subtitle (手機版隱藏 Logo 讓標題完整顯示，桌機版保留) */}
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1 sm:flex-initial">
             <div
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-xs"
+              className="hidden sm:flex w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-700 text-white items-center justify-center shrink-0 shadow-xs"
               title="郭林家族族譜"
             >
               <svg
@@ -1838,7 +1838,7 @@ export function App() {
               </svg>
             </div>
             <div className="min-w-0">
-              <h1 className="font-extrabold text-base sm:text-xl text-stone-900 tracking-tight leading-tight truncate">
+              <h1 className="font-extrabold text-sm sm:text-xl text-stone-900 tracking-tight leading-tight whitespace-nowrap">
                 {settings.title}
               </h1>
               {settings.subtitle && (
