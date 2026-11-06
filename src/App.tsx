@@ -1975,11 +1975,18 @@ export function App() {
                 }}
                 className="bg-transparent text-xs font-extrabold text-emerald-800 focus:outline-none cursor-pointer max-w-[130px] truncate"
               >
-                <option value="visitor">訪客</option>
-                {Object.values(members).map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}{m.nickname ? ` (${m.nickname})` : ''}
-                  </option>
+                <option value="visitor">訪客模式（總覽）</option>
+                {kinshipDropdownGroups.map((group) => (
+                  <React.Fragment key={group.generation}>
+                    <option disabled value={`group-desktop-persp-${group.generation}`} className="font-extrabold text-stone-400 bg-stone-100 py-1">
+                      {group.label}
+                    </option>
+                    {group.members.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </React.Fragment>
                 ))}
               </select>
               <button
@@ -2166,11 +2173,18 @@ export function App() {
                 }}
                 className="bg-transparent text-[11px] font-extrabold text-emerald-800 focus:outline-none cursor-pointer max-w-[85px] truncate"
               >
-                <option value="visitor">訪客</option>
-                {Object.values(members).map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}{m.nickname ? ` (${m.nickname})` : ''}
-                  </option>
+                <option value="visitor">訪客模式（總覽）</option>
+                {kinshipDropdownGroups.map((group) => (
+                  <React.Fragment key={group.generation}>
+                    <option disabled value={`group-desktop-persp-${group.generation}`} className="font-extrabold text-stone-400 bg-stone-100 py-1">
+                      {group.label}
+                    </option>
+                    {group.members.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </React.Fragment>
                 ))}
               </select>
               <button
@@ -2734,10 +2748,17 @@ export function App() {
                     }}
                     className="px-2.5 py-1.5 rounded-xl bg-white border border-stone-300 font-extrabold text-xs sm:text-sm text-stone-900 cursor-pointer max-w-[190px] sm:max-w-none truncate shadow-2xs"
                   >
-                    {Object.values(members).map((m) => (
-                      <option key={m.id} value={m.id}>
-                        第{m.generation}代 · {m.name} {m.nickname ? `(${m.nickname})` : ''}
-                      </option>
+                    {kinshipDropdownGroups.map((group) => (
+                      <React.Fragment key={group.generation}>
+                        <option disabled value={`group-person-${group.generation}`} className="font-extrabold text-stone-400 bg-stone-100 py-1">
+                          {group.label}
+                        </option>
+                        {group.members.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </React.Fragment>
                     ))}
                   </select>
                 </div>
@@ -3476,14 +3497,53 @@ export function App() {
                   </div>
                   <div>
                     <div className="text-xs font-bold text-stone-500">💬 LINE ID</div>
-                    <div className="font-bold text-stone-800 mt-0.5">
-                      {selectedMember.lineId || '(未填寫)'}
+                    <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
+                      {selectedMember.lineId ? (
+                        <>
+                          <span className="font-extrabold text-stone-900 select-all">
+                            {selectedMember.lineId}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(selectedMember.lineId);
+                              showToast(`📋 已複製 LINE ID：${selectedMember.lineId}`);
+                            }}
+                            className="px-2 py-0.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[11px] font-bold transition cursor-pointer shadow-2xs flex items-center gap-1 shrink-0"
+                            title="複製 LINE ID 到剪貼簿"
+                          >
+                            <span>📋 複製ID</span>
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-stone-400 font-normal">(未填寫)</span>
+                      )}
                     </div>
                   </div>
                   <div>
                     <div className="text-xs font-bold text-stone-500">📘 Facebook</div>
-                    <div className="font-bold text-stone-800 mt-0.5 truncate">
-                      {selectedMember.fbUrl || '(未填寫)'}
+                    <div className="mt-0.5 truncate">
+                      {selectedMember.fbUrl ? (
+                        <a
+                          href={
+                            selectedMember.fbUrl.startsWith('http://') || selectedMember.fbUrl.startsWith('https://')
+                              ? selectedMember.fbUrl
+                              : selectedMember.fbUrl.startsWith('facebook.com') || selectedMember.fbUrl.startsWith('www.facebook.com')
+                              ? `https://${selectedMember.fbUrl}`
+                              : `https://www.facebook.com/${selectedMember.fbUrl.replace(/^@/, '')}`
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-extrabold text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 truncate max-w-full"
+                          title="開啟 Facebook 個人主頁（另開新分頁）"
+                        >
+                          <span className="truncate">{selectedMember.fbUrl}</span>
+                          <span className="text-xs text-blue-500 shrink-0">↗</span>
+                        </a>
+                      ) : (
+                        <span className="text-stone-400 font-normal">(未填寫)</span>
+                      )}
                     </div>
                   </div>
                   <div className="sm:col-span-2 pt-1 border-t border-stone-200">
