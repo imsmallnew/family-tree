@@ -3807,9 +3807,9 @@ export function App() {
                       )}
                     </div>
                   </div>
-                  <div>
+                  <div className="sm:col-span-2">
                     <div className="text-xs font-bold text-stone-500">📘 Facebook</div>
-                    <div className="mt-0.5 truncate">
+                    <div className="mt-0.5">
                       {selectedMember.fbUrl ? (
                         <a
                           href={
@@ -3821,10 +3821,10 @@ export function App() {
                           }
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="font-extrabold text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 truncate max-w-full"
+                          className="font-extrabold text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1.5 break-all leading-relaxed"
                           title="開啟 Facebook 個人主頁（另開新分頁）"
                         >
-                          <span className="truncate">{selectedMember.fbUrl}</span>
+                          <span className="break-all">{selectedMember.fbUrl}</span>
                           <span className="text-xs text-blue-500 shrink-0">↗</span>
                         </a>
                       ) : (
@@ -4389,49 +4389,6 @@ export function App() {
                   onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-medium text-stone-900 focus:outline-none focus:border-emerald-600 disabled:opacity-60"
                 />
-              </div>
-
-              {/* Row 7: 跨家族串接 - 外聯專屬族譜（選填） */}
-              <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-extrabold text-emerald-950 flex items-center gap-1.5">
-                    <span>🌳 跨家族串接：外聯專屬族譜（選填）</span>
-                  </span>
-                  <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
-                    伴侶家族互聯
-                  </span>
-                </div>
-                <p className="text-xs text-stone-600 leading-relaxed">
-                  若該成員（如配偶伴侶或姻親長輩）所屬家族建有獨立的專屬數位族譜，填寫後點開此人卡片即可顯示一鍵跳轉按鈕！
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-stone-700 font-bold mb-1 text-xs">
-                      外聯家族名稱
-                    </label>
-                    <input
-                      type="text"
-                      disabled={!canEdit}
-                      placeholder="例：林氏家族族譜"
-                      value={formData.externalTreeName || ''}
-                      onChange={(e) => setFormData({ ...formData, externalTreeName: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-stone-300 font-bold text-stone-900 text-sm focus:outline-none focus:border-emerald-600 disabled:opacity-60"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-stone-700 font-bold mb-1 text-xs">
-                      外聯族譜網址（URL）
-                    </label>
-                    <input
-                      type="text"
-                      disabled={!canEdit}
-                      placeholder="例：https://imsmallnew.github.io/family-tree/?family=lin"
-                      value={formData.externalTreeUrl || ''}
-                      onChange={(e) => setFormData({ ...formData, externalTreeUrl: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-stone-300 font-mono text-stone-900 text-xs sm:text-sm focus:outline-none focus:border-emerald-600 disabled:opacity-60"
-                    />
-                  </div>
-                </div>
               </div>
 
               {/* Modal Footer */}
@@ -5062,48 +5019,6 @@ export function App() {
                   }
                   className="w-full px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-300 font-medium text-stone-900 focus:outline-none focus:border-emerald-600"
                 />
-              </div>
-
-              {/* Row 7: 跨家族串接 - 外聯專屬族譜（選填） */}
-              <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-extrabold text-emerald-950 flex items-center gap-1.5">
-                    <span>🌳 跨家族串接：外聯專屬族譜（選填）</span>
-                  </span>
-                  <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
-                    伴侶家族互聯
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-stone-700 font-bold mb-1 text-xs">
-                      外聯家族名稱
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="例：林氏家族族譜"
-                      value={newMemberDraft.externalTreeName}
-                      onChange={(e) =>
-                        setNewMemberDraft({ ...newMemberDraft, externalTreeName: e.target.value })
-                      }
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-stone-300 font-bold text-stone-900 text-sm focus:outline-none focus:border-emerald-600"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-stone-700 font-bold mb-1 text-xs">
-                      外聯族譜網址（URL）
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="例：https://imsmallnew.github.io/family-tree/?family=lin"
-                      value={newMemberDraft.externalTreeUrl}
-                      onChange={(e) =>
-                        setNewMemberDraft({ ...newMemberDraft, externalTreeUrl: e.target.value })
-                      }
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-stone-300 font-mono text-stone-900 text-xs sm:text-sm focus:outline-none focus:border-emerald-600"
-                    />
-                  </div>
-                </div>
               </div>
 
               {/* Modal Footer */}
